@@ -1,0 +1,9 @@
+aureon_web/
+    app.py
+    requirements.txt
+    static/
+        script.js
+        style.css
+    templates/
+        index.html
+        register.html

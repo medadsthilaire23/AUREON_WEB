@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>AUREON - Inicio</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Bienvenido a AUREON</h1>
+    <p>ASINs registrados:</p>
+    <ul>
+        {% for item in asin_list %}
+            <li>{{ item.asin }} - Registrado el {{ item.fecha }}</li>
+        {% else %}
+            <li>No hay ASINs registrados aún.</li>
+        {% endfor %}
+    </ul>
+    <a href="/register">Registrar nuevo ASIN</a>
+</body>
+</html>
