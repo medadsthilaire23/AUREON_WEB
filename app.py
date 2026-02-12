@@ -23,12 +23,12 @@ announcements = [
     {
         "title": "Nueva API Amazon disponible",
         "description": "Extracción avanzada de datos optimizada.",
-        "link": "/hub"
+        "link": "/hud"
     },
     {
         "title": "Automatización AliExpress mejorada",
         "description": "Scripts más rápidos y eficientes.",
-        "link": "/hub"
+        "link": "/hud"
     }
 ]
 
@@ -37,10 +37,10 @@ def index():
     """Landing principal."""
     return render_template("index.html")
 
-@app.route("/hub")
+@app.route("/hud")
 def hub():
     """Página de aplicaciones."""
-    return render_template("hub.html")
+    return render_template("hud.html")
 
 @app.route("/api/announcements")
 def get_announcements():
