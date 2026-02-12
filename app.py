@@ -38,7 +38,7 @@ def index():
     return render_template("index.html")
 
 @app.route("/hud")
-def hub():
+def hud():
     """Página de aplicaciones."""
     return render_template("hud.html")
 
