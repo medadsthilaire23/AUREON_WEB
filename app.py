@@ -1,47 +1,54 @@
-from flask import Flask, render_template, request
-import json
-import os
+# app.py
+"""
+Aplicación principal de AUREON.
+
+Este archivo:
+- Inicializa el servidor Flask
+- Define rutas principales
+- Sirve la landing SaaS
+- Sirve el hub de aplicaciones
+- Prepara estructura para futuras APIs dinámicas
+
+No contiene aún base de datos ni autenticación.
+Es base limpia para evolución posterior.
+"""
+
+from flask import Flask, render_template, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
 
-# Archivo JSON para persistencia
-JSON_FILE = "asin_data.json"
-
-# Función para cargar ASINs desde el JSON
-def cargar_asins():
-    if os.path.exists(JSON_FILE):
-        with open(JSON_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
-    return []
-
-# Función para guardar ASINs en el JSON
-def guardar_asins(asins):
-    with open(JSON_FILE, "w", encoding="utf-8") as f:
-        json.dump(asins, f, indent=4)
-
-# Cargar ASINs al iniciar la app
-asin_list = cargar_asins()
+# Simulación de anuncios dinámicos
+announcements = [
+    {
+        "title": "Nueva API Amazon disponible",
+        "description": "Extracción avanzada de datos optimizada.",
+        "link": "/hub"
+    },
+    {
+        "title": "Automatización AliExpress mejorada",
+        "description": "Scripts más rápidos y eficientes.",
+        "link": "/hub"
+    }
+]
 
 @app.route("/")
-def home():
-    return render_template("index.html", asin_list=asin_list)
+def index():
+    """Landing principal."""
+    return render_template("index.html")
 
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        asin = request.form.get("asin")
-        if asin and not any(a["asin"] == asin for a in asin_list):
-            registro = {
-                "asin": asin,
-                "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            asin_list.append(registro)
-            guardar_asins(asin_list)  # Guardar inmediatamente
-    return render_template("register.html", asin_list=asin_list)
+@app.route("/hub")
+def hub():
+    """Página de aplicaciones."""
+    return render_template("hub.html")
+
+@app.route("/api/announcements")
+def get_announcements():
+    """
+    Endpoint que devuelve anuncios dinámicos.
+    Se puede conectar más adelante a base de datos.
+    """
+    return jsonify(announcements)
 
 if __name__ == "__main__":
     app.run(debug=True)

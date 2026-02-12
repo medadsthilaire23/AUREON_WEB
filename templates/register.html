@@ -2,26 +2,42 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Registrar ASIN - AUREON</title>
+    <title>Crear Cuenta — AUREON</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Registrar ASIN</h1>
-    <form method="POST">
-        <label for="asin">ASIN:</label>
-        <input type="text" id="asin" name="asin" required>
-        <button type="submit">Registrar</button>
-    </form>
 
-    <h2>ASINs registrados:</h2>
-    <ul>
-        {% for item in asin_list %}
-            <li>{{ item.asin }} - Registrado el {{ item.fecha }}</li>
-        {% else %}
-            <li>No hay ASINs registrados aún.</li>
-        {% endfor %}
-    </ul>
+<header class="hero" style="padding: 60px 20px;">
+    <h1>Crear Cuenta</h1>
+    <p>Accede a todas las herramientas del ecosistema AUREON.</p>
+</header>
 
-    <a href="/">Volver al inicio</a>
+<section style="display:flex; justify-content:center; padding:40px;">
+    <div class="card" style="width:350px;">
+
+        <form method="POST">
+            <label>Email</label><br>
+            <input type="email" name="email" required style="width:100%; padding:8px; margin:10px 0;"><br>
+
+            <label>Contraseña</label><br>
+            <input type="password" name="password" required style="width:100%; padding:8px; margin:10px 0;"><br>
+
+            <button class="primary-btn" style="width:100%; margin-top:15px;">
+                Crear Cuenta
+            </button>
+        </form>
+
+        <p style="margin-top:20px; font-size:14px;">
+            ¿Ya tienes cuenta?
+            <a href="#">Inicia sesión</a>
+        </p>
+
+    </div>
+</section>
+
+<footer>
+    <p>© 2026 AUREON</p>
+</footer>
+
 </body>
 </html>
