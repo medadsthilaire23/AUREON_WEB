@@ -1,20 +1,14 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AUREON — Plataforma</title>
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
+
+{% block title %}AUREON — Plataforma{% endblock %}
+
+{% block content %}
 
 <header class="hero">
 
     <img src="{{ url_for('static', filename='AureonWeb_150px.png') }}" 
-        alt="AUREON Logo" 
-        class="logo">
+         alt="AUREON Logo" 
+         class="logo">
 
     <h1>AUREON</h1>
     <p>Automatización y APIs para potenciar tu negocio digital.</p>
@@ -43,12 +37,11 @@
         <p>Automatiza procesos repetitivos y optimiza tu flujo de trabajo.</p>
         <a href="/hub" class="secondary-btn">Ver Scripts</a>
     </div>
+
 </section>
 
 <footer>
     <p>© 2026 AUREON — Todos los derechos reservados</p>
 </footer>
 
-<script src="{{ url_for('static', filename='script.js') }}"></script>
-</body>
-</html>
+{% endblock %}
