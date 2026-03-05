@@ -1,0 +1,31 @@
+{
+  "version": "v2.0",
+  "patterns_per_count": 30,
+  "colors": ["white", "cream", "blush", "sage", "sky", "lavender"],
+  "templates": {
+    "1": ["evidence_single_moment_v1", "evidence_single_moment_v2", "evidence_milestone_v1"],
+    "2": ["evidence_comparison_v1", "evidence_comparison_v2", "evidence_before_after_v1"],
+    "3": ["evidence_sequence_v1", "evidence_sequence_v2", "evidence_event_timeline_v1"],
+    "4": ["evidence_grid_v1", "evidence_grid_v2", "evidence_daily_life_v1"]
+  },
+  "color_strategies": ["monochrome", "dual", "gradient", "palette", "random"],
+  "gradients": [
+    ["white", "cream", "sage"], ["cream", "blush", "lavender"],
+    ["white", "sky", "sage"],   ["sage", "cream", "blush"],
+    ["sky", "white", "cream"]
+  ],
+  "palettes": [
+    ["cream", "blush", "sage"], ["white", "cream", "sky"],
+    ["sage", "white", "lavender"], ["blush", "cream", "lavender"]
+  ],
+  "frequencies": {
+    "LOW":    {"1": 0.35, "2": 0.35, "3": 0.20, "4": 0.10},
+    "MEDIUM": {"1": 0.20, "2": 0.30, "3": 0.30, "4": 0.20},
+    "HIGH":   {"1": 0.05, "2": 0.10, "3": 0.15, "4": 0.70}
+  },
+  "page_limits": {
+    "LOW":    {"min": 5,  "max": 10, "max_slot4": 2},
+    "MEDIUM": {"min": 10, "max": 16, "max_slot4": 999},
+    "HIGH":   {"min": 16, "max": 22, "max_slot4": 999}
+  }
+}

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: AUREON_WEB
+    env: python
+    region: oregon
+    branch: main
+    repo: https://github.com/medadsthilaire23/AUREON_WEB
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --timeout 120
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    healthCheckPath: /

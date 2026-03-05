@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}AUREON — Hub{% endblock %}
+{% block content %}
+<header class="hub-header">
+    <h1>Centro de Herramientas</h1>
+    <a href="/" class="secondary-btn">Volver</a>
+</header>
+<section class="hub-grid">
+
+    <!-- Lifebound — producto activo -->
+    <div class="card" style="border:1px solid #6366f1;">
+        <h3>⚡ Lifebound</h3>
+        <p>Genera tu álbum de evidencia USCIS con fotos organizadas por año.</p>
+        <a href="/lifebound" class="primary-btn" style="display:inline-block;margin-top:10px;">
+            Abrir →
+        </a>
+    </div>
+
+    <div class="card">
+        <h3>API Amazon</h3>
+        <p>Extracción y automatización avanzada.</p>
+        <button disabled>Próximamente</button>
+    </div>
+    <div class="card">
+        <h3>API AliExpress</h3>
+        <p>Optimización y análisis de datos.</p>
+        <button disabled>Próximamente</button>
+    </div>
+    <div class="card">
+        <h3>Scripts Automatizados</h3>
+        <p>Procesos programables personalizados.</p>
+        <button disabled>Próximamente</button>
+    </div>
+</section>
+{% endblock %}

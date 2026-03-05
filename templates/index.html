@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}AUREON — Plataforma{% endblock %}
+{% block content %}
+<header class="hero">
+    <img src="{{ url_for('static', filename='AureonWeb_150px.png') }}"
+         alt="AUREON Logo" class="logo">
+    <h1>AUREON</h1>
+    <p>Automatización y APIs para potenciar tu negocio digital.</p>
+    <a href="/hud" class="primary-btn">Explorar herramientas</a>
+</header>
+<section class="announcements">
+    <h2>Actualizaciones</h2>
+    <div id="announcements-container"></div>
+</section>
+<section class="apps-preview">
+    <h2>Aplicaciones</h2>
+    <div class="card">
+        <h3>⚡ Lifebound</h3>
+        <p>Genera tu álbum de evidencia USCIS en minutos.</p>
+        <a href="/lifebound" class="secondary-btn">Abrir →</a>
+    </div>
+    <div class="card">
+        <h3>APIs</h3>
+        <p>Conecta y automatiza plataformas como Amazon y AliExpress.</p>
+        <a href="/hud" class="secondary-btn">Ver APIs</a>
+    </div>
+    <div class="card">
+        <h3>Scripts de Automatización</h3>
+        <p>Automatiza procesos repetitivos y optimiza tu flujo de trabajo.</p>
+        <a href="/hud" class="secondary-btn">Ver Scripts</a>
+    </div>
+</section>
+<footer>
+    <p>© 2026 AUREON — Todos los derechos reservados</p>
+</footer>
+{% endblock %}
