@@ -518,13 +518,32 @@ function removePhoto(idx) {
 }
 
 function handleFiles(files) {
-  S.validFiles = Array.from(files).filter(f =>
+  const incoming = Array.from(files).filter(f =>
     (f.type === 'image/jpeg' || f.type === 'image/png') && f.size < 15*1024*1024
-  ).slice(0, 80);
+  );
+
+  // Filtrar duplicados por nombre+tamanio
+  const existing = new Set(S.validFiles.map(f => f.name + f.size));
+  const fresh    = incoming.filter(f => !existing.has(f.name + f.size));
+
+  // Acumular sin superar 80
+  const combined = [...S.validFiles, ...fresh].slice(0, 80);
+  const added    = combined.length - S.validFiles.length;
+  const rejected = incoming.length - fresh.length;
+  S.validFiles   = combined;
+
   document.getElementById('processArea').style.display = 'block';
   renderPhotoGrid();
-  if (S.validFiles.length >= 15 && S.validFiles.length <= 80)
-    toast(S.validFiles.length + ' photos loaded ✓', 'success');
+
+  const count = S.validFiles.length;
+  if (added > 0 && count >= 15 && count <= 80)
+    toast(added + ' photos added — ' + count + ' total ✓', 'success');
+  else if (added > 0 && count < 15)
+    toast(count + ' photos — need at least 15', 'error');
+  else if (added === 0 && rejected > 0)
+    toast('Photos already in the list', 'error');
+  if (count > 80)
+    toast('Maximum 80 photos reached', 'error');
 }
 
 function proceedToGrouping() {
