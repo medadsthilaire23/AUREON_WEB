@@ -869,20 +869,11 @@ async function generatePDF() {
       });
     }));
 
-    showLoad('Sending photos...', 'Uploading to server');
-
-    // 3 — enviar fotos a sesion
-    const fdp = new FormData();
-    fdp.append('session_id', S.sessionId);
-    Object.entries(compMap).forEach(([pid, b]) => fdp.append('photos', b, pid + '.jpg'));
-    const pr = await fetch('/lifebound/api/session/photos', {method:'POST', body: fdp});
-    if (!pr.ok) throw new Error('Failed to upload photos');
-
     showLoad('Generating PDF...', 'Assembling your USCIS evidence album');
 
-    // 4 — generar PDF
+    // 3 — un solo request: fotos + plan + payload juntos
     const fdg = new FormData();
-    fdg.append('session_id', S.sessionId);
+    Object.entries(compMap).forEach(([pid, b]) => fdg.append('photos', b, pid + '.jpg'));
     fdg.append('payload', JSON.stringify({
       plan: S.currentPattern.plan,
       questionnaire_data: S.questionnaireData,

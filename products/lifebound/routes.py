@@ -275,8 +275,11 @@ def generate_album():
         if not plan:
             return jsonify({"error": "No plan provided"}), 400
 
-        # Obtener fotos de la sesion
-        photo_map = _session_get_photos(sid) if sid and _session_exists(sid) else {}
+        # Fotos llegan directamente en este mismo request
+        photo_map = {}
+        for f in request.files.getlist('photos'):
+            pid = os.path.splitext(f.filename)[0]
+            photo_map[pid] = f.read()
         log.info(f"Generate: {name}  {len(plan)} pages  {len(photo_map)} photos")
 
         cover_data = {
