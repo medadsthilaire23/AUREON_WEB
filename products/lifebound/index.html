@@ -113,6 +113,8 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);font-si
 .grouping-photo img{width:100%;height:100%;object-fit:cover;}
 .grouping-photo.removing{border-color:var(--red);}
 .grouping-photo.removing::after{content:'✕';position:absolute;inset:0;background:rgba(239,68,68,.75);display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:white;font-weight:700;}
+.grouping-photo.selected-multi{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--accent);transform:scale(1.04);}
+.grouping-photo.selected-multi::after{content:'✓';position:absolute;top:5px;left:5px;width:22px;height:22px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:white;font-weight:700;z-index:2;}
 
 /* QUESTIONNAIRE */
 .page-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px;margin-bottom:18px;}
@@ -121,6 +123,15 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);font-si
 .template-badge{background:var(--accent-bg);color:var(--accent2);padding:3px 9px;border-radius:5px;font-size:.7rem;font-weight:500;}
 .year-badge{background:var(--surface2);color:var(--text2);padding:3px 9px;border-radius:5px;font-size:.7rem;font-weight:600;margin-left:auto;}
 .template-preview{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:16px;text-align:center;font-size:1.8rem;margin-bottom:16px;}
+.page-photos{display:flex;gap:8px;margin-bottom:16px;border-radius:var(--r);overflow:hidden;}
+.page-photo-slot{flex:1;aspect-ratio:4/3;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;position:relative;}
+.page-photo-slot img{width:100%;height:100%;object-fit:cover;display:block;}
+.page-photo-slot .slot-label{position:absolute;bottom:4px;right:5px;font-size:.6rem;color:var(--text3);background:rgba(0,0,0,.5);padding:1px 5px;border-radius:3px;}
+.page-photos-wrap{margin-bottom:16px;}
+.page-photos-controls{display:flex;align-items:center;gap:6px;}
+.swap-btn{width:24px;height:24px;flex-shrink:0;background:var(--surface3);border:1px solid var(--border2);border-radius:50%;color:var(--text2);font-size:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.swap-btn:hover{background:var(--accent-bg);border-color:var(--accent-border);color:var(--accent2);}
+.swap-btn:disabled{opacity:.2;cursor:not-allowed;}
 .form-fields{display:flex;flex-direction:column;gap:14px;}
 .form-group textarea{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 11px;color:var(--text);font-family:var(--font-sans);font-size:.88rem;transition:all .2s;resize:vertical;min-height:70px;}
 .form-group textarea:focus{outline:none;border-color:var(--accent);background:var(--surface3);}
@@ -320,10 +331,17 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);font-si
       <div id="modeIndicator" class="mode-indicator" style="display:none;"></div>
 
       <div id="groupingPhotosContainer" style="display:none;">
-        <h3 style="margin-bottom:10px;font-size:.95rem;">
+        <h3 style="margin-bottom:10px;font-size:.95rem;display:flex;align-items:center;gap:10px;">
           <span id="photosGridTitle">Available Photos</span>
-          <span style="color:var(--text3);font-size:.83rem;font-weight:400;margin-left:7px;">(<span id="photosRemaining">0</span> remaining)</span>
+          <span style="color:var(--text3);font-size:.83rem;font-weight:400;">(<span id="photosRemaining">0</span> remaining)</span>
+          <button class="btn btn-secondary" id="btnSelectMode" onclick="toggleSelectMode()" style="margin-left:auto;padding:5px 12px;font-size:.78rem;">Select</button>
         </h3>
+        <div id="selectToolbar" class="select-toolbar" style="display:none;">
+          <span id="selectCount">0 selected</span>
+          <button class="btn btn-secondary" onclick="selectAllVisible()" style="padding:5px 12px;font-size:.78rem;">All</button>
+          <button class="btn btn-secondary" onclick="clearSelection()" style="padding:5px 12px;font-size:.78rem;">Clear</button>
+          <button class="btn btn-primary" id="btnAssignSelected" onclick="assignSelectedToYear()" disabled style="padding:5px 12px;font-size:.78rem;">Assign to year</button>
+        </div>
         <div class="photo-grid" id="groupingPhotos"></div>
         <div id="emptyState" style="display:none;text-align:center;padding:44px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin-top:18px;">
           <div style="font-size:2.5rem;margin-bottom:10px;opacity:.5;">✓</div>
@@ -416,7 +434,9 @@ const S = {
   unlockedSteps:    new Set([1]),
   templateConfig:   {},
   sessionId:        null,
-  identityMap:      {}
+  identityMap:      {},
+  selectMode:       false,
+  selectedIndices:  new Set()
 };
 
 // ════════════════════════════════════════════════
@@ -603,22 +623,26 @@ function toggleYearSelection(year) {
 
 function updateModeIndicator() {
   const el = document.getElementById('modeIndicator');
-  if (!selectedYear) { el.style.display = 'none'; return; }
+  if (!selectedYear && !S.selectMode) { el.style.display = 'none'; return; }
   el.style.display = 'block';
-  if (reviewMode) {
+  if (S.selectMode) {
+    el.className = 'mode-indicator';
+    el.innerHTML = '<strong>\u2713 Select Mode:</strong> Click photos to select, then assign to <strong>' + (selectedYear || 'a year') + '</strong>.';
+  } else if (reviewMode) {
     el.className = 'mode-indicator review';
-    el.innerHTML = `<strong>📋 Review Mode:</strong> Viewing photos in ${selectedYear}. Click to remove.`;
+    el.innerHTML = '<strong>\ud83d\udccb Review Mode:</strong> Viewing photos in ' + selectedYear + '. Click to remove.';
   } else {
     el.className = 'mode-indicator';
-    el.innerHTML = `<strong>✏️ Assign Mode:</strong> Click photos below to assign to <strong>${selectedYear}</strong>. Click year again to review.`;
+    el.innerHTML = '<strong>\u270f\ufe0f Assign Mode:</strong> Click photos to assign to <strong>' + selectedYear + '</strong>. Click year again to review.';
   }
+  updateSelectToolbar();
 }
 
 function populateGroupingPhotos() {
-  const grid = document.getElementById('groupingPhotos');
+  const grid     = document.getElementById('groupingPhotos');
   grid.innerHTML = '';
-  const assigned = new Set(Object.values(S.yearGrouping).flat());
-  const unassigned = S.validFiles.filter((_, i) => !assigned.has(i));
+  const assigned   = new Set(Object.values(S.yearGrouping).flat());
+  const unassigned = S.validFiles.map((f,i) => i).filter(i => !assigned.has(i));
 
   document.getElementById('photosGridTitle').textContent = 'Available Photos';
   document.getElementById('photosRemaining').textContent = unassigned.length;
@@ -627,23 +651,99 @@ function populateGroupingPhotos() {
     grid.style.display = 'none';
     document.getElementById('emptyState').style.display = 'block';
     document.getElementById('btnNext2').disabled = false;
+    exitSelectMode();
     return;
   }
   grid.style.display = 'grid';
   document.getElementById('emptyState').style.display = 'none';
 
-  unassigned.forEach(file => {
-    const origIdx = S.validFiles.indexOf(file);
-    const reader  = new FileReader();
+  unassigned.forEach(origIdx => {
+    const reader = new FileReader();
     reader.onload = e => {
       const div = document.createElement('div');
-      div.className = 'grouping-photo';
-      div.innerHTML = `<img src="${e.target.result}">`;
-      div.onclick = () => assignPhotoToYear(origIdx);
+      div.className = 'grouping-photo' + (S.selectedIndices.has(origIdx) ? ' selected-multi' : '');
+      div.dataset.idx = origIdx;
+      div.innerHTML   = '<img src="' + e.target.result + '">';
+      div.onclick = () => {
+        if (S.selectMode) {
+          togglePhotoSelection(origIdx, div);
+        } else {
+          assignPhotoToYear(origIdx);
+        }
+      };
       grid.appendChild(div);
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(S.validFiles[origIdx]);
   });
+  updateSelectToolbar();
+}
+
+function toggleSelectMode() {
+  S.selectMode = !S.selectMode;
+  if (!S.selectMode) exitSelectMode();
+  else {
+    document.getElementById('selectToolbar').style.display = 'flex';
+    document.getElementById('btnSelectMode').textContent   = 'Cancel';
+    document.getElementById('btnSelectMode').style.background = 'var(--red-bg)';
+    updateModeIndicator();
+  }
+}
+
+function exitSelectMode() {
+  S.selectMode = false;
+  S.selectedIndices.clear();
+  document.getElementById('selectToolbar').style.display  = 'none';
+  const btn = document.getElementById('btnSelectMode');
+  if (btn) { btn.textContent = 'Select'; btn.style.background = ''; }
+  updateSelectToolbar();
+}
+
+function togglePhotoSelection(origIdx, div) {
+  if (S.selectedIndices.has(origIdx)) {
+    S.selectedIndices.delete(origIdx);
+    div.classList.remove('selected-multi');
+  } else {
+    S.selectedIndices.add(origIdx);
+    div.classList.add('selected-multi');
+  }
+  updateSelectToolbar();
+}
+
+function selectAllVisible() {
+  const assigned = new Set(Object.values(S.yearGrouping).flat());
+  S.validFiles.forEach((_, i) => { if (!assigned.has(i)) S.selectedIndices.add(i); });
+  populateGroupingPhotos();
+}
+
+function clearSelection() {
+  S.selectedIndices.clear();
+  populateGroupingPhotos();
+}
+
+function updateSelectToolbar() {
+  const n   = S.selectedIndices.size;
+  const el  = document.getElementById('selectCount');
+  const btn = document.getElementById('btnAssignSelected');
+  if (el)  el.textContent  = n + ' selected';
+  if (btn) btn.disabled    = (n === 0 || !selectedYear);
+  if (btn && selectedYear) btn.textContent = 'Assign to ' + selectedYear;
+  else if (btn)            btn.textContent = 'Assign to year';
+}
+
+function assignSelectedToYear() {
+  if (!selectedYear) { toast('Select a year first', 'error'); return; }
+  if (S.selectedIndices.size === 0) { toast('No photos selected', 'error'); return; }
+  let count = 0;
+  S.selectedIndices.forEach(idx => {
+    if (!S.yearGrouping[selectedYear].includes(idx)) {
+      S.yearGrouping[selectedYear].push(idx);
+      count++;
+    }
+  });
+  document.getElementById('count_' + selectedYear).textContent = S.yearGrouping[selectedYear].length;
+  exitSelectMode();
+  populateGroupingPhotos();
+  toast(count + ' photos assigned to ' + selectedYear, 'success');
 }
 
 function assignPhotoToYear(photoIndex) {
@@ -751,8 +851,21 @@ const TMPL_META = {
 // ════════════════════════════════════════════════
 // STEP 3: DYNAMIC QUESTIONNAIRE
 // ════════════════════════════════════════════════
+function buildPhotoIdToFileMap() {
+  const map      = {};
+  const yearKeys = Object.keys(S.yearGrouping).filter(y => S.yearGrouping[y].length > 0).sort();
+  let cursor     = 0;
+  const allIds   = Object.keys(S.identityMap);
+  yearKeys.forEach(yr => {
+    S.yearGrouping[yr].forEach(fileIdx => {
+      if (cursor < allIds.length) { map[allIds[cursor]] = S.validFiles[fileIdx]; cursor++; }
+    });
+  });
+  return map;
+}
+
 function generateDynamicQuestionnaire(pattern) {
-  const container = document.getElementById('questionnaireContainer');
+  const container    = document.getElementById('questionnaireContainer');
   document.getElementById('patternInfo').style.display = 'block';
   document.getElementById('patternId').textContent     = pattern.pattern_id;
   document.getElementById('patternPages').textContent  = pattern.photo_pages;
@@ -760,39 +873,114 @@ function generateDynamicQuestionnaire(pattern) {
   document.getElementById('patternRange').textContent  = pattern.range_type;
   container.innerHTML = '';
 
-  const years = Object.keys(S.yearGrouping).filter(y => S.yearGrouping[y].length > 0).sort();
+  const photoIdToFile = buildPhotoIdToFileMap();
+  const plan          = pattern.plan || [];
 
-  pattern.template_sequence.forEach((tid, idx) => {
-    const meta = TMPL_META[tid] || { name: tid, icon: '📄', photos: 1 };
-    const pageNum = idx + 1;
-    const year = years[idx % years.length] || '—';
+  plan.forEach(page => {
+    const tid     = page.template;
+    const meta    = TMPL_META[tid] || { name: tid, icon: '\ud83d\udcc4', photos: 1 };
+    const pageNum = page.page;
+    const slots   = page.slots || [];
+    const years   = [...new Set(slots.map(s => s.year))].filter(Boolean).join(', ') || '\u2014';
 
-    container.innerHTML += `
-      <div class="page-section">
-        <div class="page-header">
-          <h3>Page ${pageNum}</h3>
-          <span class="template-badge">${meta.name}</span>
-          <span class="year-badge">${year}</span>
-        </div>
-        <div class="template-preview">${meta.icon}<br><small style="font-size:.6rem;color:var(--text3);font-family:var(--font-sans);">${meta.photos} photo${meta.photos>1?'s':''}</small></div>
-        <div class="form-fields">
-          <div class="form-row">
-            <div class="form-group">
-              <label>Date <span style="color:var(--text3)">(optional)</span></label>
-              <input type="text" name="page_${pageNum}_date" placeholder="e.g. Dec 2022">
-            </div>
-            <div class="form-group">
-              <label>Location <span style="color:var(--text3)">(optional)</span></label>
-              <input type="text" name="page_${pageNum}_location" placeholder="e.g. Miami, FL">
-            </div>
+    const section = document.createElement('div');
+    section.className = 'page-section';
+    section.innerHTML = `
+      <div class="page-header">
+        <h3>Page ${pageNum}</h3>
+        <span class="template-badge">${meta.name}</span>
+        <span class="year-badge">${years}</span>
+      </div>
+      <div class="page-photos page-photos-wrap" id="photos_page_${pageNum}"></div>
+      <div class="form-fields">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date <span style="color:var(--text3)">(optional)</span></label>
+            <input type="text" name="page_${pageNum}_date" placeholder="e.g. Dec 2022">
           </div>
           <div class="form-group">
-            <label>Description <span style="color:var(--red)">*</span></label>
-            <textarea name="page_${pageNum}_description" rows="2" required placeholder="Briefly describe this moment for the USCIS officer..."></textarea>
+            <label>Location <span style="color:var(--text3)">(optional)</span></label>
+            <input type="text" name="page_${pageNum}_location" placeholder="e.g. Miami, FL">
           </div>
         </div>
+        <div class="form-group">
+          <label>Description <span style="color:var(--red)">*</span></label>
+          <textarea name="page_${pageNum}_description" rows="2" required placeholder="Briefly describe this moment for the USCIS officer..."></textarea>
+        </div>
       </div>`;
+    container.appendChild(section);
+
+    // Renderizar fotos reales con controles de swap
+    const photosRow = document.getElementById('photos_page_' + pageNum);
+    if (slots.length === 0) {
+      photosRow.innerHTML = '<div class="page-photo-slot" style="display:flex;align-items:center;justify-content:center;font-size:1.8rem;opacity:.5;">' + meta.icon + '</div>';
+    } else {
+      renderPageSlots(photosRow, slots, photoIdToFile, pageNum);
+    }
   });
+}
+
+function renderPageSlots(container, slots, photoIdToFile, pageNum) {
+  container.innerHTML = '';
+  // Construir fila con fotos intercaladas de botones swap
+  const wrap = document.createElement('div');
+  wrap.className = 'page-photos-controls';
+
+  slots.forEach((slot, si) => {
+    // Foto
+    const slotDiv = document.createElement('div');
+    slotDiv.className = 'page-photo-slot';
+    slotDiv.dataset.slotIdx = si;
+    const file = photoIdToFile[slot.photo_id];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        slotDiv.innerHTML = '<img src="' + e.target.result + '"><span class="slot-label">' + slot.year + '</span>';
+      };
+      reader.readAsDataURL(file);
+    } else {
+      slotDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.4rem;opacity:.4;">\ud83d\uddbc\ufe0f</div>';
+    }
+    wrap.appendChild(slotDiv);
+
+    // Boton swap entre este slot y el siguiente
+    if (si < slots.length - 1) {
+      const btn = document.createElement('button');
+      btn.className = 'swap-btn';
+      btn.title     = 'Swap photos ' + (si+1) + ' and ' + (si+2);
+      btn.innerHTML = '\u21c4';
+      btn.onclick   = () => swapSlots(pageNum, si, si + 1);
+      wrap.appendChild(btn);
+    }
+  });
+
+  container.appendChild(wrap);
+}
+
+function swapSlots(pageNum, idxA, idxB) {
+  // Buscar la pagina en el plan
+  const page = S.currentPattern.plan.find(p => p.page === pageNum);
+  if (!page) return;
+
+  // Intercambiar photo_ids en el plan
+  const tmp           = page.slots[idxA].photo_id;
+  page.slots[idxA].photo_id = page.slots[idxB].photo_id;
+  page.slots[idxB].photo_id = tmp;
+
+  // Tambien intercambiar years
+  const tmpY          = page.slots[idxA].year;
+  page.slots[idxA].year = page.slots[idxB].year;
+  page.slots[idxB].year = tmpY;
+
+  // Actualizar identity_map
+  S.identityMap[page.slots[idxA].photo_id].slot = idxA + 1;
+  S.identityMap[page.slots[idxB].photo_id].slot = idxB + 1;
+
+  // Re-renderizar solo esta pagina
+  const container    = document.getElementById('photos_page_' + pageNum);
+  const photoIdToFile = buildPhotoIdToFileMap();
+  renderPageSlots(container, page.slots, photoIdToFile, pageNum);
+  toast('Photos swapped', 'success');
 }
 
 function validateQuestionnaire() {
