@@ -1,0 +1,71 @@
+{
+  "_comment": "Dimensiones reales de cada slot por plantilla, en puntos tipográficos (1 pt = 1/72 inch). Derivadas directamente de evidence_templates.py. NO editar manualmente — si cambian las plantillas, regenerar desde el código fuente.",
+  "_page_size": "Letter (612 x 792 pt)",
+  "_slot_order": "Mismo orden que photo_1, photo_2, ... en cada plantilla",
+
+  "evidence_single_moment_v1": [
+    { "slot": 1, "w": 360, "h": 432 }
+  ],
+
+  "evidence_single_moment_v2": [
+    { "slot": 1, "w": 396, "h": 432 }
+  ],
+
+  "evidence_milestone_v1": [
+    { "slot": 1, "w": 396, "h": 432 }
+  ],
+
+  "evidence_comparison_v1": [
+    { "slot": 1, "w": 245, "h": 396 },
+    { "slot": 2, "w": 245, "h": 396 }
+  ],
+
+  "evidence_comparison_v2": [
+    { "slot": 1, "w": 360, "h": 238 },
+    { "slot": 2, "w": 360, "h": 238 }
+  ],
+
+  "evidence_before_after_v1": [
+    { "slot": 1, "w": 230, "h": 374 },
+    { "slot": 2, "w": 230, "h": 374 }
+  ],
+
+  "evidence_sequence_v1": [
+    { "slot": 1, "w": 151, "h": 396 },
+    { "slot": 2, "w": 151, "h": 396 },
+    { "slot": 3, "w": 151, "h": 396 }
+  ],
+
+  "evidence_sequence_v2": [
+    { "slot": 1, "w": 274, "h": 396, "_note": "foto grande izquierda" },
+    { "slot": 2, "w": 173, "h": 187, "_note": "foto pequeña superior derecha" },
+    { "slot": 3, "w": 173, "h": 187, "_note": "foto pequeña inferior derecha" }
+  ],
+
+  "evidence_event_timeline_v1": [
+    { "slot": 1, "w": 151, "h": 346 },
+    { "slot": 2, "w": 151, "h": 346 },
+    { "slot": 3, "w": 151, "h": 346 }
+  ],
+
+  "evidence_grid_v1": [
+    { "slot": 1, "w": 202, "h": 202, "_note": "superior izquierda" },
+    { "slot": 2, "w": 202, "h": 202, "_note": "superior derecha" },
+    { "slot": 3, "w": 202, "h": 202, "_note": "inferior izquierda" },
+    { "slot": 4, "w": 202, "h": 202, "_note": "inferior derecha" }
+  ],
+
+  "evidence_grid_v2": [
+    { "slot": 1, "w": 115, "h": 396 },
+    { "slot": 2, "w": 115, "h": 396 },
+    { "slot": 3, "w": 115, "h": 396 },
+    { "slot": 4, "w": 115, "h": 396 }
+  ],
+
+  "evidence_daily_life_v1": [
+    { "slot": 1, "w": 252, "h": 396, "_note": "foto principal grande izquierda" },
+    { "slot": 2, "w": 202, "h": 122, "_note": "foto pequeña columna derecha superior" },
+    { "slot": 3, "w": 202, "h": 122, "_note": "foto pequeña columna derecha media" },
+    { "slot": 4, "w": 202, "h": 122, "_note": "foto pequeña columna derecha inferior" }
+  ]
+}

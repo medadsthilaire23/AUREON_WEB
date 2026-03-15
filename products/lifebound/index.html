@@ -2,1124 +2,402 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Lifebound — USCIS Album Builder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<!-- Monitor SDK — carga async, no bloquea si el monitor está caído -->
-<script>
-  (function() {
-    var s = document.createElement("script");
-    s.src = window.location.protocol + "//" + window.location.hostname + ":5051/monitor_sdk.js";
-    s.async = true;
-    s.onerror = function() {
-      window.monitor = new Proxy({}, { get: function() { return function() {}; } });
-    };
-    document.head.appendChild(s);
-  })();
-</script>
-<style>
-:root {
-  --bg:#0a0a0b; --surface:#111113; --surface2:#18181b; --surface3:#1f1f24;
-  --border:rgba(255,255,255,.08); --border2:rgba(255,255,255,.12);
-  --text:#f4f4f5; --text2:#a1a1aa; --text3:#71717a;
-  --accent:#6366f1; --accent2:#818cf8; --accent-bg:rgba(99,102,241,.12);
-  --accent-border:rgba(99,102,241,.3);
-  --green:#22c55e; --green-bg:rgba(34,197,94,.1);
-  --red:#ef4444; --red-bg:rgba(239,68,68,.1);
-  --amber:#f59e0b; --amber-bg:rgba(245,158,11,.1);
-  --sidebar-w:220px;
-  --font-serif:'Instrument Serif',Georgia,serif;
-  --font-sans:'Geist',system-ui,sans-serif;
-  --ease:cubic-bezier(.16,1,.3,1);
-  --r:8px; --r-lg:12px;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html{scroll-behavior:smooth;}
-body{font-family:var(--font-sans);background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;min-height:100vh;display:flex;overflow-x:hidden;}
-
-/* SIDEBAR */
-.sidebar{width:var(--sidebar-w);min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:50;transition:transform .25s var(--ease);}
-.sidebar.collapsed{transform:translateX(calc(-1 * var(--sidebar-w)));}
-.sidebar-toggle{position:fixed;top:14px;left:14px;z-index:60;width:36px;height:36px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;transition:all .15s;}
-.sidebar-toggle:hover{background:var(--surface3);border-color:var(--border2);}
-.sidebar-toggle span{display:block;width:16px;height:1.5px;background:var(--text2);border-radius:2px;transition:all .25s var(--ease);}
-.sidebar.collapsed ~ .sidebar-toggle{left:14px;}
-.main{transition:margin-left .25s var(--ease);}
-.main.expanded{margin-left:0;}
-.sidebar-logo{padding:20px 16px 16px;padding-left:52px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
-.logo-mark{width:28px;height:28px;background:var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:700;color:white;letter-spacing:.03em;flex-shrink:0;}
-.logo-text{font-family:var(--font-serif);font-size:1.05rem;color:var(--text);line-height:1;}
-.logo-text small{display:block;font-family:var(--font-sans);font-size:.6rem;color:var(--text3);font-style:normal;margin-top:2px;letter-spacing:.04em;}
-.sidebar-section{padding:16px 12px;flex:1;}
-.sidebar-label{font-size:.65rem;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;padding:0 4px;}
-.nav-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r);cursor:pointer;font-size:.85rem;color:var(--text2);transition:all .15s;margin-bottom:2px;position:relative;}
-.nav-item:hover{background:var(--surface2);color:var(--text);}
-.nav-item.active{background:var(--accent-bg);color:var(--accent2);border:1px solid var(--accent-border);}
-.nav-item.locked{opacity:.4;cursor:not-allowed;pointer-events:none;}
-.nav-icon{font-size:.9rem;}
-.nav-check{margin-left:auto;color:var(--green);font-size:.75rem;font-weight:700;}
-.sidebar-bottom{padding:16px;border-top:1px solid var(--border);}
-.progress-mini{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--text3);margin-bottom:6px;}
-.progress-dot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--border2);flex-shrink:0;}
-.progress-dot.done{background:var(--green);border-color:var(--green);}
-.progress-dot.active{background:var(--accent);border-color:var(--accent);}
-
-/* MAIN */
-.main{margin-left:var(--sidebar-w);flex:1;min-height:100vh;display:flex;flex-direction:column;}
-.topbar{height:52px;background:rgba(17,17,19,.8);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 28px;position:sticky;top:0;z-index:40;backdrop-filter:blur(16px);}
-.content{flex:1;padding:32px;max-width:1200px;margin:0 auto;width:100%;}
-.step{display:none;}
-.step.active{display:block;animation:fadeIn .3s var(--ease);}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
-.step-title{font-family:var(--font-serif);font-size:2rem;margin-bottom:8px;}
-.step-subtitle{color:var(--text2);font-size:.95rem;margin-bottom:28px;}
-
-/* UPLOAD */
-.upload-zone{border:2px dashed var(--border2);border-radius:var(--r-lg);padding:48px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);}
-.upload-zone:hover{border-color:var(--accent-border);background:var(--surface2);}
-.upload-zone.drag-over{border-color:var(--accent);background:var(--accent-bg);}
-.upload-icon{font-size:3rem;margin-bottom:12px;opacity:.5;}
-.upload-text{font-size:1.1rem;margin-bottom:6px;}
-.upload-hint{color:var(--text3);font-size:.85rem;}
-.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:24px;}
-.photo-thumb{aspect-ratio:1;border-radius:var(--r);background:var(--surface2);border:1px solid var(--border);overflow:hidden;position:relative;}
-.photo-thumb img{width:100%;height:100%;object-fit:cover;}
-.photo-thumb:hover .photo-delete{opacity:1;}
-.photo-delete{position:absolute;top:4px;left:4px;width:20px;height:20px;border-radius:50%;background:rgba(239,68,68,.85);color:white;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;opacity:0;transition:opacity .15s;z-index:5;line-height:1;}
-.photo-delete:hover{background:var(--red);}
-.pip{position:absolute;top:5px;right:5px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:700;}
-.pip.good{background:var(--green);color:white;}
-.pip.bad{background:var(--red);color:white;}
-
-/* APPLICANT INFO */
-.info-form{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
-.info-form .full{grid-column:1/-1;}
-.form-group{display:flex;flex-direction:column;gap:5px;}
-.form-group label{font-size:.82rem;font-weight:500;color:var(--text2);}
-.form-group input,.form-group select{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 11px;color:var(--text);font-family:var(--font-sans);font-size:.88rem;transition:all .2s;}
-.form-group input:focus,.form-group select:focus{outline:none;border-color:var(--accent);background:var(--surface3);}
-.form-group input.error{border-color:var(--red);}
-.form-group select option{background:var(--surface2);}
-
-/* YEAR GROUPING */
-.year-btn{padding:10px 18px;background:var(--surface2);border:2px solid var(--border);border-radius:var(--r);color:var(--text2);font-family:var(--font-sans);font-size:.88rem;font-weight:500;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:8px;}
-.year-btn:hover{background:var(--surface3);border-color:var(--border2);}
-.year-btn.selected{background:var(--accent);border-color:var(--accent);color:white;}
-.year-btn-count{background:var(--surface);padding:2px 7px;border-radius:10px;font-size:.72rem;font-weight:600;}
-.year-btn.selected .year-btn-count{background:rgba(255,255,255,.2);}
-.grouping-photo{aspect-ratio:1;border-radius:var(--r);background:var(--surface2);border:2px solid var(--border);overflow:hidden;cursor:pointer;position:relative;transition:all .2s;}
-.grouping-photo:hover{border-color:var(--accent);transform:scale(1.04);}
-.grouping-photo img{width:100%;height:100%;object-fit:cover;}
-.grouping-photo.removing{border-color:var(--red);}
-.grouping-photo.removing::after{content:'✕';position:absolute;inset:0;background:rgba(239,68,68,.75);display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:white;font-weight:700;}
-.grouping-photo.selected-multi{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--accent);transform:scale(1.04);}
-.grouping-photo.selected-multi::after{content:'✓';position:absolute;top:5px;left:5px;width:22px;height:22px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:white;font-weight:700;z-index:2;}
-
-/* QUESTIONNAIRE */
-.page-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px;margin-bottom:18px;}
-.page-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border);}
-.page-header h3{font-size:1rem;font-weight:600;}
-.template-badge{background:var(--accent-bg);color:var(--accent2);padding:3px 9px;border-radius:5px;font-size:.7rem;font-weight:500;}
-.year-badge{background:var(--surface2);color:var(--text2);padding:3px 9px;border-radius:5px;font-size:.7rem;font-weight:600;margin-left:auto;}
-.template-preview{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:16px;text-align:center;font-size:1.8rem;margin-bottom:16px;}
-.page-photos{display:flex;gap:8px;margin-bottom:16px;border-radius:var(--r);overflow:hidden;}
-.page-photo-slot{flex:1;aspect-ratio:4/3;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;position:relative;}
-.page-photo-slot img{width:100%;height:100%;object-fit:cover;display:block;}
-.page-photo-slot .slot-label{position:absolute;bottom:4px;right:5px;font-size:.6rem;color:var(--text3);background:rgba(0,0,0,.5);padding:1px 5px;border-radius:3px;}
-.page-photos-wrap{margin-bottom:16px;}
-.page-photos-controls{display:flex;align-items:center;gap:6px;}
-.swap-btn{width:24px;height:24px;flex-shrink:0;background:var(--surface3);border:1px solid var(--border2);border-radius:50%;color:var(--text2);font-size:.75rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
-.swap-btn:hover{background:var(--accent-bg);border-color:var(--accent-border);color:var(--accent2);}
-.swap-btn:disabled{opacity:.2;cursor:not-allowed;}
-.form-fields{display:flex;flex-direction:column;gap:14px;}
-.form-group textarea{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 11px;color:var(--text);font-family:var(--font-sans);font-size:.88rem;transition:all .2s;resize:vertical;min-height:70px;}
-.form-group textarea:focus{outline:none;border-color:var(--accent);background:var(--surface3);}
-.form-group textarea.error{border-color:var(--red);}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-
-/* BUTTONS */
-.btn{padding:10px 20px;border-radius:var(--r);border:none;font-family:var(--font-sans);font-size:.88rem;font-weight:500;cursor:pointer;transition:all .2s;}
-.btn-primary{background:var(--accent);color:white;}
-.btn-primary:hover{background:var(--accent2);}
-.btn-primary:disabled{opacity:.45;cursor:not-allowed;}
-.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
-.btn-secondary:hover{background:var(--surface3);}
-.btn-success{background:var(--green);color:white;}
-.btn-success:hover{filter:brightness(1.1);}
-.step-actions{display:flex;gap:12px;margin-top:28px;}
-
-/* INFO CARDS */
-.info-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;margin-bottom:18px;}
-.info-card h4{font-size:.95rem;margin-bottom:7px;}
-.info-card p{color:var(--text2);font-size:.88rem;line-height:1.5;}
-
-/* PATTERN INFO */
-.pattern-info{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;margin-bottom:22px;}
-.pattern-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px;margin-top:10px;}
-.pattern-stat{text-align:center;padding:10px;background:var(--surface2);border-radius:var(--r);}
-.pattern-stat-value{font-size:1.4rem;font-weight:600;color:var(--accent2);}
-.pattern-stat-label{font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-top:3px;}
-
-/* SUMMARY */
-.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;}
-.summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;}
-.summary-card h5{font-size:.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
-.summary-card p{font-size:1rem;font-weight:600;}
-
-/* TOAST */
-.toast-stack{position:fixed;bottom:22px;right:22px;z-index:100;display:flex;flex-direction:column;gap:7px;}
-.toast{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:11px 15px;box-shadow:0 4px 12px rgba(0,0,0,.3);animation:slideIn .3s var(--ease);font-size:.88rem;}
-@keyframes slideIn{from{transform:translateX(100%);opacity:0;}to{transform:translateX(0);opacity:1;}}
-.toast.success{border-color:var(--green);}
-.toast.error{border-color:var(--red);}
-
-/* LOADING */
-.loading-overlay{position:fixed;inset:0;background:rgba(10,10,11,.95);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;z-index:1000;}
-.loading-overlay.show{display:flex;}
-.loading-content{text-align:center;}
-.spinner{width:44px;height:44px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 14px;}
-@keyframes spin{to{transform:rotate(360deg);}}
-
-/* MODE INDICATOR */
-.mode-indicator{background:var(--accent-bg);border:1px solid var(--accent-border);border-radius:var(--r);padding:10px 14px;margin-bottom:18px;color:var(--accent2);font-size:.88rem;}
-.mode-indicator.review{background:var(--amber-bg);border-color:rgba(245,158,11,.3);color:var(--amber);}
-</style>
+<link rel="stylesheet" href="/lifebound/static/lifebound.css">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Lifebound — USCIS Album Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/lifebound/static/lifebound.css">
+</head>
+<link rel="icon" type="image/png" href="/lifebound/static/lifebound_150.png">
+<body>
 </head>
 <body>
 
-<button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Toggle menu">
+<!-- SIDEBAR TOGGLE -->
+<button class="sb-toggle" id="sbToggle">
   <span></span><span></span><span></span>
 </button>
+
+<!-- SIDEBAR -->
 <div class="sidebar" id="sidebar">
-  <div class="sidebar-logo">
+  <div class="sb-logo">
     <div class="logo-mark">LB</div>
-    <div class="logo-text">Lifebound<small>USCIS ALBUM BUILDER</small></div>
+    <div class="logo-text">Lifebound<small>USCIS Album Builder</small></div>
   </div>
-  <div class="sidebar-section">
-    <div class="sidebar-label">Steps</div>
-    <div class="nav-item active" id="nav1" onclick="tryGoTo(1)">
-      <span class="nav-icon">📤</span> Upload Photos <span class="nav-check" id="check1"></span>
-    </div>
-    <div class="nav-item locked" id="nav2" onclick="tryGoTo(2)">
-      <span class="nav-icon">📅</span> Group by Year <span class="nav-check" id="check2"></span>
-    </div>
-    <div class="nav-item locked" id="nav3" onclick="tryGoTo(3)">
-      <span class="nav-icon">📝</span> Questionnaire <span class="nav-check" id="check3"></span>
-    </div>
-    <div class="nav-item locked" id="nav4" onclick="tryGoTo(4)">
-      <span class="nav-icon">👁️</span> Review & Generate <span class="nav-check" id="check4"></span>
-    </div>
+  <div class="sb-nav">
+    <div class="sb-label">Steps</div>
+    <div class="nav-item active" id="nav1"><span class="nav-icon">📤</span>Upload Photos<span class="nav-check" id="chk1"></span></div>
+    <div class="nav-item locked" id="nav2"><span class="nav-icon">📋</span>Applicant Info<span class="nav-check" id="chk2"></span></div>
+    <div class="nav-item locked" id="nav3"><span class="nav-icon">📅</span>Group by Year<span class="nav-check" id="chk3"></span></div>
+    <div class="nav-item locked" id="nav4"><span class="nav-icon">📝</span>Questionnaire<span class="nav-check" id="chk4"></span></div>
+    <div class="nav-item locked" id="nav5"><span class="nav-icon">🖼️</span>Preview<span class="nav-check" id="chk5"></span></div>
+    <div class="nav-item locked" id="nav6"><span class="nav-icon">⬇️</span>Generate<span class="nav-check" id="chk6"></span></div>
   </div>
-  <div class="sidebar-bottom">
-    <div class="progress-mini"><div class="progress-dot active" id="dot1"></div>Step 1 of 4</div>
-    <div class="progress-mini"><div class="progress-dot" id="dot2"></div>Step 2 of 4</div>
-    <div class="progress-mini"><div class="progress-dot" id="dot3"></div>Step 3 of 4</div>
-    <div class="progress-mini"><div class="progress-dot" id="dot4"></div>Step 4 of 4</div>
+  <div class="sb-bottom">
+    <div class="progress-track">
+      <div class="progress-seg active" id="ps1"></div>
+      <div class="progress-seg" id="ps2"></div>
+      <div class="progress-seg" id="ps3"></div>
+      <div class="progress-seg" id="ps4"></div>
+      <div class="progress-seg" id="ps5"></div>
+      <div class="progress-seg" id="ps6"></div>
+    </div>
+    <div class="progress-label" id="pLabel">Step 1 of 6</div>
   </div>
 </div>
 
-<div class="main">
+<!-- MAIN -->
+<div class="main-wrap" id="mainWrap">
   <div class="topbar">
-    <div style="color:var(--text3);font-size:.85rem;"><span id="stepIndicator">Step 1 of 4</span></div>
-    <div style="color:var(--text3);font-size:.85rem;"><span id="photoBadge">0 photos</span></div>
+    <div class="topbar-l">
+      <span class="topbar-step" id="stepInd">Step 1 of 6</span>
+      <span style="color:var(--border2)">·</span>
+      <span class="topbar-name" id="stepName">Upload Photos</span>
+    </div>
+    <div><div class="photo-badge" id="photoBadge">0 fotos</div></div>
   </div>
 
   <div class="content">
 
-    <!-- ══ STEP 1: UPLOAD + INFO ══ -->
+    <!-- ══════════════════════════════
+         STEP 1: UPLOAD
+    ══════════════════════════════ -->
     <div class="step active" id="step1">
       <h1 class="step-title">Upload Your Photos</h1>
-      <p class="step-subtitle">Upload 15–80 photos for your USCIS evidence album</p>
-
+      <p class="step-sub">Upload 15–80 photos · replacing photos later keeps the album pattern intact</p>
       <div class="info-card">
         <h4>📋 Requirements</h4>
-        <p>• JPG/PNG formats only &nbsp;•&nbsp; Minimum 15 photos &nbsp;•&nbsp; Maximum 80 photos</p>
+        <p>JPG or PNG · Max 15 MB per file · Min 15 — Max 80 photos<br>Adding or removing photos resets the pattern. Replacing keeps it.</p>
       </div>
-
-      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <div class="upload-zone" id="uploadZone">
         <div class="upload-icon">📁</div>
-        <div class="upload-text">Click to browse or drag files here</div>
-        <div class="upload-hint">Supports JPG, PNG · Max 80 files</div>
+        <div class="upload-text">Click to browse or drag &amp; drop</div>
+        <div class="upload-hint">JPG, PNG · up to 80 files</div>
       </div>
-      <input type="file" id="fileInput" multiple accept="image/*" style="display:none" onchange="handleFiles(this.files)">
-
-      <div id="processArea" style="display:none;margin-top:22px;">
-        <h3 style="margin-bottom:10px;font-size:1rem;">Valid Photos (<span id="photoCount">0</span>)</h3>
+      <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
+      <div id="processArea" style="display:none;margin-top:18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;">
+          <h3 style="font-size:.9rem;font-weight:600;">Photos <span style="color:var(--text3);font-weight:400">(<span id="photoCount">0</span>)</span></h3>
+          <span id="photoHint" style="font-size:.76rem;"></span>
+        </div>
         <div class="photo-grid" id="pgrid"></div>
       </div>
+      <div class="step-actions">
+        <button class="btn btn-primary" id="btnNext1" disabled>Continue to Applicant Info →</button>
+      </div>
+    </div>
 
-      <!-- Applicant Info -->
-      <div id="applicantSection" style="display:none;margin-top:28px;">
-        <h3 style="margin-bottom:16px;font-size:1.1rem;font-weight:600;">Applicant Information</h3>
-        <div class="info-card" style="margin-bottom:0;">
-          <div class="info-form">
-            <div class="form-group">
-              <label>Applicant Full Name *</label>
-              <input type="text" id="applicantName" placeholder="Jane Smith">
-            </div>
-            <div class="form-group">
-              <label>USC Spouse Name *</label>
-              <input type="text" id="spouseName" placeholder="John Smith">
-            </div>
-            <div class="form-group full">
-              <label>Address</label>
-              <input type="text" id="applicantAddress" placeholder="123 Main St, City, State, ZIP">
-            </div>
-            <div class="form-group">
-              <label>USCIS Field Office</label>
-              <input type="text" id="fieldOffice" placeholder="Boston Field Office">
-            </div>
-            <div class="form-group">
-              <label>A-Number</label>
-              <input type="text" id="aNumber" placeholder="A123456789">
-            </div>
-            <div class="form-group">
-              <label>N-400 Receipt #</label>
-              <input type="text" id="receiptN400" placeholder="IOE0000000000">
-            </div>
-            <div class="form-group">
-              <label>I-751 Receipt #</label>
-              <input type="text" id="receiptI751" placeholder="IOE0000000000">
-            </div>
-            <div class="form-group">
-              <label>Interview Date</label>
-              <input type="text" id="interviewDate" placeholder="January 01, 2025">
-            </div>
-            <div class="form-group">
-              <label>Interview Time</label>
-              <input type="text" id="interviewTime" placeholder="9:30 AM">
-            </div>
+    <!-- ══════════════════════════════
+         STEP 2: APPLICANT INFO
+    ══════════════════════════════ -->
+    <div class="step" id="step2">
+      <h1 class="step-title">Applicant Information</h1>
+      <p class="step-sub">These details will appear on the three intro pages — all fields are editable</p>
+
+      <div class="info-tabs">
+        <button class="info-tab active" id="itab_cover" data-tab="cover"><span class="tab-dot"></span> Cover Page</button>
+        <button class="info-tab"        id="itab_letter" data-tab="letter"><span class="tab-dot"></span> Cover Letter</button>
+        <button class="info-tab"        id="itab_id"     data-tab="id"><span class="tab-dot"></span> Identification</button>
+      </div>
+
+      <!-- Cover Page -->
+      <div class="info-page active" id="ipage_cover">
+        <div class="info-block">
+          <div class="info-block-hdr">
+            <div class="info-block-icon">📄</div>
+            <div><h3>Cover Page</h3><p>Front page — page 1</p></div>
+            <span class="info-completeness partial" id="icomp_cover">Required fields missing</span>
           </div>
+          <div class="form-grid">
+            <div class="fg"><label>Applicant Full Name <span style="color:var(--red)">*</span></label>
+              <input type="text" data-ip="cover" data-if="name" placeholder="Jane Smith"></div>
+            <div class="fg"><label>USC Spouse Name <span style="color:var(--red)">*</span></label>
+              <input type="text" data-ip="cover" data-if="spouse" placeholder="John Smith"></div>
+            <div class="fg full"><label>Address</label>
+              <input type="text" data-ip="cover" data-if="address" placeholder="123 Main St, City, State, ZIP"></div>
+            <div class="fg"><label>Date of Interview</label>
+              <input type="text" data-ip="cover" data-if="interview_date" placeholder="January 01, 2025"></div>
+            <div class="fg"><label>Time of Interview</label>
+              <input type="text" data-ip="cover" data-if="interview_time" placeholder="9:30 AM"></div>
+          </div>
+          <div class="receipt-divider"></div>
+          <div class="receipt-group">
+            <div class="receipt-group-label">N Forms <span class="rg-count" id="ncount_cover">0 selected</span></div>
+            <div class="receipt-btns"  id="nbtns_cover"></div>
+            <div class="receipt-fields" id="nfields_cover"></div>
+          </div>
+          <div class="receipt-group">
+            <div class="receipt-group-label">I Forms <span class="rg-count" id="icount_cover">0 selected</span></div>
+            <div class="receipt-btns"  id="ibtns_cover"></div>
+            <div class="receipt-fields" id="ifields_cover"></div>
+          </div>
+        </div>
+        <div class="page-nav-arrows"><div></div>
+          <button class="btn btn-ghost" data-tab="letter">Cover Letter →</button>
+        </div>
+      </div>
+
+      <!-- Cover Letter -->
+      <div class="info-page" id="ipage_letter">
+        <div class="info-block">
+          <div class="info-block-hdr">
+            <div class="info-block-icon">✉️</div>
+            <div><h3>Cover Letter</h3><p>Case summary letter — page 2</p></div>
+            <span class="info-completeness ok" id="icomp_letter">Optional fields</span>
+          </div>
+          <div class="form-grid" style="margin-bottom:14px;">
+            <div class="fg"><label>Applicant Full Name</label>
+              <input type="text" data-ip="letter" data-if="name" placeholder="Jane Smith"></div>
+            <div class="fg"><label>USC Spouse Name</label>
+              <input type="text" data-ip="letter" data-if="spouse" placeholder="John Smith"></div>
+            <div class="fg full"><label>Address</label>
+              <input type="text" data-ip="letter" data-if="address" placeholder="123 Main St, City, State, ZIP"></div>
+          </div>
+          <div class="receipt-divider"></div>
+          <div class="receipt-group">
+            <div class="receipt-group-label">N Forms <span class="rg-count" id="ncount_letter">0 selected</span></div>
+            <div class="receipt-btns"  id="nbtns_letter"></div>
+            <div class="receipt-fields" id="nfields_letter"></div>
+          </div>
+          <div class="receipt-group">
+            <div class="receipt-group-label">I Forms <span class="rg-count" id="icount_letter">0 selected</span></div>
+            <div class="receipt-btns"  id="ibtns_letter"></div>
+            <div class="receipt-fields" id="ifields_letter"></div>
+          </div>
+          <div class="receipt-divider"></div>
+          <div id="doclist_letter"></div>
+          <div class="receipt-divider"></div>
+          <div class="fg" style="margin-bottom:10px;">
+            <label>Closing paragraph</label>
+            <textarea data-ip="letter" data-if="closing" rows="2">Thank you for reviewing these applications and supporting documents.</textarea>
+          </div>
+          <div class="form-grid">
+            <div class="fg"><label>Signature — Applicant</label>
+              <input type="text" data-ip="letter" data-if="sig_applicant" placeholder="Jane Smith"></div>
+            <div class="fg"><label>Signature — USC Spouse</label>
+              <input type="text" data-ip="letter" data-if="sig_spouse" placeholder="John Smith"></div>
+          </div>
+        </div>
+        <div class="page-nav-arrows">
+          <button class="btn btn-ghost" data-tab="cover">← Cover Page</button>
+          <button class="btn btn-ghost" data-tab="id">Identification →</button>
+        </div>
+      </div>
+
+      <!-- Identification -->
+      <div class="info-page" id="ipage_id">
+        <div class="info-block">
+          <div class="info-block-hdr">
+            <div class="info-block-icon">🪪</div>
+            <div><h3>Identification Page</h3><p>Document checklist — page 3</p></div>
+            <span class="info-completeness partial" id="icomp_id">Required fields missing</span>
+          </div>
+          <div class="form-grid" style="margin-bottom:16px;">
+            <div class="fg"><label>Applicant Full Name <span style="color:var(--red)">*</span></label>
+              <input type="text" data-ip="id" data-if="name" placeholder="Jane Smith"></div>
+            <div class="fg"><label>USC Spouse Name <span style="color:var(--red)">*</span></label>
+              <input type="text" data-ip="id" data-if="spouse" placeholder="John Smith"></div>
+            <div class="fg"><label>A-Number</label>
+              <input type="text" data-ip="id" data-if="a_number" placeholder="A123456789"></div>
+            <div class="fg"><label>Interview Date</label>
+              <input type="text" data-ip="id" data-if="interview_date" placeholder="January 01, 2025"></div>
+            <div class="fg"><label>Interview Time</label>
+              <input type="text" data-ip="id" data-if="interview_time" placeholder="9:30 AM"></div>
+            <div class="fg full"><label>Address</label>
+              <input type="text" data-ip="id" data-if="address" placeholder="123 Main St, City, State, ZIP"></div>
+          </div>
+          <div class="receipt-divider"></div>
+          <div class="receipt-group">
+            <div class="receipt-group-label">N Forms <span class="rg-count" id="ncount_id">0 selected</span></div>
+            <div class="receipt-btns"  id="nbtns_id"></div>
+            <div class="receipt-fields" id="nfields_id"></div>
+          </div>
+          <div class="receipt-group">
+            <div class="receipt-group-label">I Forms <span class="rg-count" id="icount_id">0 selected</span></div>
+            <div class="receipt-btns"  id="ibtns_id"></div>
+            <div class="receipt-fields" id="ifields_id"></div>
+          </div>
+          <div class="receipt-divider"></div>
+          <div id="doclist_id"></div>
+        </div>
+        <div class="page-nav-arrows">
+          <button class="btn btn-ghost" data-tab="letter">← Cover Letter</button>
+          <div></div>
         </div>
       </div>
 
       <div class="step-actions">
-        <button class="btn btn-primary" id="btnNext1" disabled onclick="proceedToGrouping()">
-          Continue to Grouping →
-        </button>
+        <button class="btn btn-secondary" id="btnBack2">← Back</button>
+        <button class="btn btn-primary"   id="btnNext2">Continue to Group by Year →</button>
       </div>
     </div>
 
-    <!-- ══ STEP 2: YEAR GROUPING ══ -->
-    <div class="step" id="step2">
+    <!-- ══════════════════════════════
+         STEP 3: YEAR GROUPING
+    ══════════════════════════════ -->
+    <div class="step" id="step3">
       <h1 class="step-title">Group Photos by Year</h1>
-      <p class="step-subtitle">Select a year, then click photos to assign them</p>
-
-      <div class="info-card">
-        <h4>📋 How it works</h4>
-        <p>1. Set your time range &nbsp; 2. Click a year to select it &nbsp; 3. Click photos to assign them &nbsp; 4. Click the year again to review/remove</p>
-      </div>
-
-      <div style="margin-bottom:22px;">
-        <label style="display:block;margin-bottom:8px;font-weight:500;">Set Time Range</label>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-          <input type="number" id="yearStart" placeholder="2020" min="2000" max="2035"
-                 style="padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);width:110px;">
-          <span>to</span>
-          <input type="number" id="yearEnd" placeholder="2024" min="2000" max="2035"
-                 style="padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);width:110px;">
-          <button class="btn btn-secondary" onclick="generateYearButtons()">Generate Years</button>
+      <p class="step-sub">Assign each photo to a year — metadata only, doesn't affect the album pattern</p>
+      <div class="info-card"><h4>📋 How it works</h4><p>Set a range → select a year → click photos to assign · Click the year again to review</p></div>
+      <div style="margin-bottom:18px;">
+        <label style="display:block;margin-bottom:7px;font-weight:500;font-size:.86rem;">Time Range</label>
+        <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;">
+          <input type="number" id="yearStart" placeholder="2020" min="2000" max="2035" style="padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);width:95px;font-family:var(--font-sans);font-size:.84rem;">
+          <span style="color:var(--text3)">to</span>
+          <input type="number" id="yearEnd"   placeholder="2024" min="2000" max="2035" style="padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);width:95px;font-family:var(--font-sans);font-size:.84rem;">
+          <button class="btn btn-secondary" id="btnGenerateYears">Generate Years</button>
         </div>
       </div>
-
-      <div id="yearButtonsContainer" style="display:none;margin-bottom:22px;">
-        <label style="display:block;margin-bottom:10px;font-weight:500;">Year Buckets</label>
-        <div id="yearButtons" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+      <div id="yearBtnsWrap" style="display:none;margin-bottom:18px;">
+        <label style="display:block;margin-bottom:8px;font-weight:500;font-size:.86rem;">Year Buckets</label>
+        <div id="yearButtons" style="display:flex;flex-wrap:wrap;gap:7px;"></div>
       </div>
-
-      <div id="modeIndicator" class="mode-indicator" style="display:none;"></div>
-
-      <div id="groupingPhotosContainer" style="display:none;">
-        <h3 style="margin-bottom:10px;font-size:.95rem;display:flex;align-items:center;gap:10px;">
-          <span id="photosGridTitle">Available Photos</span>
-          <span style="color:var(--text3);font-size:.83rem;font-weight:400;">(<span id="photosRemaining">0</span> remaining)</span>
-          <button class="btn btn-secondary" id="btnSelectMode" onclick="toggleSelectMode()" style="margin-left:auto;padding:5px 12px;font-size:.78rem;">Select</button>
-        </h3>
-        <div id="selectToolbar" class="select-toolbar" style="display:none;">
-          <span id="selectCount">0 selected</span>
-          <button class="btn btn-secondary" onclick="selectAllVisible()" style="padding:5px 12px;font-size:.78rem;">All</button>
-          <button class="btn btn-secondary" onclick="clearSelection()" style="padding:5px 12px;font-size:.78rem;">Clear</button>
-          <button class="btn btn-primary" id="btnAssignSelected" onclick="assignSelectedToYear()" disabled style="padding:5px 12px;font-size:.78rem;">Assign to year</button>
+      <div id="modeInd" style="display:none;" class="mode-ind assign"></div>
+      <div id="groupingWrap" style="display:none;">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px;">
+          <span style="font-size:.88rem;font-weight:600;" id="photosTitle">Available Photos</span>
+          <span style="color:var(--text3);font-size:.77rem;">(<span id="photosLeft">0</span> unassigned)</span>
+          <button class="btn btn-ghost" id="btnSelMode" style="margin-left:auto;padding:3px 10px;font-size:.74rem;">Select</button>
+        </div>
+        <div id="selToolbar" class="sel-toolbar" style="display:none;">
+          <span id="selCount">0 selected</span>
+          <button class="btn btn-ghost" id="btnSelectAll" style="padding:3px 9px;font-size:.74rem;">All</button>
+          <button class="btn btn-ghost" id="btnClearSel"  style="padding:3px 9px;font-size:.74rem;">Clear</button>
+          <button class="btn btn-primary" id="btnAssignSel" disabled style="padding:3px 9px;font-size:.74rem;">Assign</button>
         </div>
         <div class="photo-grid" id="groupingPhotos"></div>
-        <div id="emptyState" style="display:none;text-align:center;padding:44px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin-top:18px;">
-          <div style="font-size:2.5rem;margin-bottom:10px;opacity:.5;">✓</div>
-          <div style="font-size:1.05rem;margin-bottom:5px;">All photos assigned!</div>
-          <div style="color:var(--text3);font-size:.88rem;">Continue to fill in details</div>
+        <div id="emptyState" style="display:none;text-align:center;padding:38px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin-top:14px;">
+          <div style="font-size:2rem;margin-bottom:7px;opacity:.4;">✓</div>
+          <div style="font-size:.96rem;margin-bottom:3px;">All photos assigned!</div>
+          <div style="color:var(--text3);font-size:.82rem;">Continue to fill in descriptions</div>
         </div>
       </div>
-
       <div class="step-actions">
-        <button class="btn btn-secondary" onclick="tryGoTo(1)">← Back</button>
-        <button class="btn btn-primary" id="btnNext2" disabled onclick="proceedToQuestionnaire()">
-          Continue to Questionnaire →
-        </button>
+        <button class="btn btn-secondary" id="btnBack3">← Back</button>
+        <button class="btn btn-primary"   id="btnNext3" disabled>Continue to Questionnaire →</button>
       </div>
     </div>
 
-    <!-- ══ STEP 3: QUESTIONNAIRE ══ -->
-    <div class="step" id="step3">
-      <h1 class="step-title">Album Details</h1>
-      <p class="step-subtitle">Add context to each photo page</p>
-
-      <div class="pattern-info" id="patternInfo" style="display:none;">
-        <h4>🎨 Album Pattern</h4>
-        <div style="color:var(--text3);font-size:.83rem;margin-top:3px;"><span id="patternId">—</span></div>
-        <div class="pattern-meta">
-          <div class="pattern-stat"><div class="pattern-stat-value" id="patternPages">0</div><div class="pattern-stat-label">Photo Pages</div></div>
-          <div class="pattern-stat"><div class="pattern-stat-value" id="patternTotal">0</div><div class="pattern-stat-label">Total Pages</div></div>
-          <div class="pattern-stat"><div class="pattern-stat-value" id="patternRange">—</div><div class="pattern-stat-label">Range</div></div>
-        </div>
-      </div>
-
-      <div id="questionnaireContainer"></div>
-
-      <div class="step-actions">
-        <button class="btn btn-secondary" onclick="tryGoTo(2)">← Back</button>
-        <button class="btn btn-primary" onclick="validateQuestionnaire()">Continue to Review →</button>
-      </div>
-    </div>
-
-    <!-- ══ STEP 4: REVIEW & GENERATE ══ -->
+    <!-- ══════════════════════════════
+         STEP 4: QUESTIONNAIRE
+    ══════════════════════════════ -->
     <div class="step" id="step4">
-      <h1 class="step-title">Review & Generate</h1>
-      <p class="step-subtitle">Your USCIS evidence album is ready to generate</p>
-
-      <div class="summary-grid">
-        <div class="summary-card"><h5>Photos</h5><p id="summaryPhotos">—</p></div>
-        <div class="summary-card"><h5>Total Pages</h5><p id="summaryPages">—</p></div>
-        <div class="summary-card"><h5>Applicant</h5><p id="summaryApplicant">—</p></div>
-        <div class="summary-card"><h5>Pattern</h5><p id="summaryPattern">—</p></div>
+      <h1 class="step-title">Album Details</h1>
+      <p class="step-sub">Write a description for each page — fine-tune photos and intro pages in Preview</p>
+      <div class="pattern-info" id="patternInfo" style="display:none;">
+        <h4 style="font-size:.87rem;margin-bottom:3px;">🎨 Album Pattern</h4>
+        <div style="color:var(--text3);font-size:.78rem;margin-top:2px;" id="patternId">—</div>
+        <div class="pattern-meta">
+          <div class="pattern-stat"><div class="pattern-stat-val" id="patternPages">0</div><div class="pattern-stat-lbl">Photo Pages</div></div>
+          <div class="pattern-stat"><div class="pattern-stat-val" id="patternTotal">0</div><div class="pattern-stat-lbl">Total Pages</div></div>
+          <div class="pattern-stat"><div class="pattern-stat-val" id="patternRange">—</div><div class="pattern-stat-lbl">Range</div></div>
+        </div>
       </div>
+      <div id="qContainer"></div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" id="btnBack4">← Back</button>
+        <button class="btn btn-primary"   id="btnNext4">Continue to Preview →</button>
+      </div>
+    </div>
 
+    <!-- ══════════════════════════════
+         STEP 5: PREVIEW
+    ══════════════════════════════ -->
+    <div class="step" id="step5">
+      <h1 class="step-title">Preview Your Album</h1>
+      <p class="step-sub">All <span id="pvTotalPages">—</span> pages · edit inline · adjust photos · review intro pages</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:9px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="view-toggle">
+            <button class="vt-btn active" data-mode="all">All Pages</button>
+            <button class="vt-btn"        data-mode="intro">Intro Only</button>
+            <button class="vt-btn"        data-mode="photos">Photos Only</button>
+          </div>
+          <button class="idx-toggle active" id="idxToggleBtn">☰ Index</button>
+        </div>
+        <div style="font-size:.76rem;" id="complHint"></div>
+      </div>
+      <div class="preview-layout">
+        <div class="page-index" id="pageIndex"></div>
+        <div class="preview-content" id="pvContent"></div>
+      </div>
+      <div class="step-actions">
+        <button class="btn btn-secondary" id="btnBack5">← Back</button>
+        <button class="btn btn-primary"   id="btnNext5">Continue to Generate →</button>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════
+         STEP 6: GENERATE
+    ══════════════════════════════ -->
+    <div class="step" id="step6">
+      <h1 class="step-title">Generate Album</h1>
+      <p class="step-sub">Ready to create your USCIS evidence album</p>
+      <div class="sum-grid">
+        <div class="sum-card"><h5>Photos</h5><p id="sumPhotos">—</p></div>
+        <div class="sum-card"><h5>Total Pages</h5><p id="sumPages">—</p></div>
+        <div class="sum-card"><h5>Applicant</h5><p id="sumApplicant">—</p></div>
+        <div class="sum-card"><h5>Pattern</h5><p id="sumPattern">—</p></div>
+      </div>
       <div class="info-card">
         <h4>📄 Album Contents</h4>
-        <p>1. Cover Page &nbsp;·&nbsp; 2. Cover Letter &nbsp;·&nbsp; 3. Identification Page &nbsp;·&nbsp; <span id="summaryPhotoPages">—</span> Photo Evidence Pages</p>
+        <p>Page 1 — Cover &nbsp;·&nbsp; Page 2 — Cover Letter &nbsp;·&nbsp; Page 3 — Identification &nbsp;·&nbsp; Pages 4–<span id="sumLastPage">—</span> — Photo Evidence</p>
       </div>
-
       <div class="step-actions">
-        <button class="btn btn-secondary" onclick="tryGoTo(3)">← Back</button>
-        <button class="btn btn-success" id="btnGenerate" onclick="generatePDF()">
-          ⬇ Generate & Download PDF
-        </button>
+        <button class="btn btn-secondary" id="btnBack6">← Back to Preview</button>
+        <button class="btn btn-success"   id="btnGenerate">⬇ Generate &amp; Download PDF</button>
       </div>
     </div>
 
+  </div><!-- /content -->
+</div><!-- /main-wrap -->
+
+<!-- REPLACE MODAL -->
+<div class="modal-ov" id="replaceModal">
+  <div class="modal-box">
+    <div class="modal-title">Replace Photo</div>
+    <div class="modal-sub" id="repModalSub">Choose a replacement</div>
+    <div id="repGridWrap" style="display:none;">
+      <div style="font-size:.77rem;color:var(--text3);margin-bottom:8px;" id="repGridLabel"></div>
+      <div class="rep-grid" id="repGrid"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:13px;">
+      <button class="btn btn-secondary" id="btnCloseRepModal">Cancel</button>
+    </div>
   </div>
 </div>
 
-<!-- LOADING -->
-<div class="loading-overlay" id="loadingOverlay">
-  <div class="loading-content">
+<!-- CONFIRM DIALOG -->
+<div class="conf-ov" id="confOv">
+  <div class="conf-box">
+    <h3 id="confTitle">Are you sure?</h3>
+    <p id="confMsg"></p>
+    <div class="conf-actions">
+      <button class="btn btn-secondary" id="confCancelBtn">Cancel</button>
+      <button class="btn btn-danger"    id="confOkBtn">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOADING OVERLAY -->
+<div class="load-ov" id="loadOv">
+  <div style="text-align:center;">
     <div class="spinner"></div>
-    <div style="color:var(--text);font-size:1.05rem;margin-bottom:4px;" id="ltitle">Loading...</div>
-    <div style="color:var(--text3);font-size:.83rem;" id="lsub">Please wait</div>
+    <div style="color:var(--text);font-size:.96rem;margin-bottom:3px;" id="loadTitle">Loading…</div>
+    <div style="color:var(--text3);font-size:.78rem;" id="loadSub">Please wait</div>
   </div>
 </div>
 
-<!-- TOAST -->
+<!-- TOAST STACK -->
 <div class="toast-stack" id="toastStack"></div>
 
-<script>
-// ════════════════════════════════════════════════
-// STATE
-// ════════════════════════════════════════════════
-const S = {
-  validFiles:       [],
-  yearGrouping:     {},    // { "2022": [0,1,2], "2023": [3,4] }
-  currentPattern:   null,
-  questionnaireData:{},
-  currentStep:      1,
-  unlockedSteps:    new Set([1]),
-  templateConfig:   {},
-  sessionId:        null,
-  identityMap:      {},
-  selectMode:       false,
-  selectedIndices:  new Set()
-};
+<!-- MÓDULOS — un solo import, sin onclick en el HTML -->
+<script type="module" src="/lifebound/static/main.js"></script>
 
-// ════════════════════════════════════════════════
-// NAVIGATION
-// ════════════════════════════════════════════════
-function toggleSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  const main    = document.querySelector('.main');
-  const btn     = document.getElementById('sidebarToggle');
-  sidebar.classList.toggle('collapsed');
-  main.classList.toggle('expanded');
-  const spans = btn.querySelectorAll('span');
-  if (sidebar.classList.contains('collapsed')) {
-    spans[0].style.cssText = 'transform:translateY(6.5px) rotate(45deg)';
-    spans[1].style.cssText = 'opacity:0;transform:scaleX(0)';
-    spans[2].style.cssText = 'transform:translateY(-6.5px) rotate(-45deg)';
-  } else {
-    spans[0].style.cssText = '';
-    spans[1].style.cssText = '';
-    spans[2].style.cssText = '';
-  }
-}
-
-function tryGoTo(step) {
-  if (!S.unlockedSteps.has(step)) return;
-  goTo(step);
-}
-
-function goTo(step) {
-  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
-  document.getElementById('step'+step).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(n => { n.classList.remove('active'); n.classList.add('locked'); });
-  S.unlockedSteps.forEach(s => {
-    const el = document.getElementById('nav'+s);
-    if (el) { el.classList.remove('locked'); }
-  });
-  const navEl = document.getElementById('nav'+step);
-  if (navEl) navEl.classList.add('active');
-  document.querySelectorAll('.progress-dot').forEach(d => d.classList.remove('active'));
-  document.getElementById('dot'+step).classList.add('active');
-  document.getElementById('stepIndicator').textContent = `Step ${step} of 4`;
-  S.currentStep = step;
-}
-
-function unlock(step) {
-  S.unlockedSteps.add(step);
-  const el = document.getElementById('nav'+step);
-  if (el) el.classList.remove('locked');
-}
-
-// ════════════════════════════════════════════════
-// STEP 1: UPLOAD
-// ════════════════════════════════════════════════
-const uploadZone = document.getElementById('uploadZone');
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
-
-function renderPhotoGrid() {
-  const grid = document.getElementById('pgrid');
-  grid.innerHTML = '';
-  S.validFiles.forEach((file, i) => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const div = document.createElement('div');
-      div.className = 'photo-thumb';
-      div.dataset.idx = i;
-      div.innerHTML = '<img src="' + e.target.result + '"><button class="photo-delete" onclick="removePhoto(' + i + ')" title="Remove photo">×</button><div class="pip good">✓</div>';
-      grid.appendChild(div);
-    };
-    reader.readAsDataURL(file);
-  });
-  const count = S.validFiles.length;
-  document.getElementById('photoCount').textContent = count;
-  document.getElementById('photoBadge').textContent = count + ' photos';
-  const valid = count >= 15 && count <= 80;
-  document.getElementById('btnNext1').disabled = !valid;
-  if (count === 0) {
-    document.getElementById('processArea').style.display = 'none';
-    document.getElementById('applicantSection').style.display = 'none';
-  } else if (count < 15) {
-    toast(count + ' photos — need at least 15', 'error');
-  } else if (count > 80) {
-    toast('Maximum 80 photos', 'error');
-  } else {
-    document.getElementById('applicantSection').style.display = 'block';
-  }
-}
-
-function removePhoto(idx) {
-  S.validFiles.splice(idx, 1);
-  Object.keys(S.yearGrouping).forEach(yr => {
-    S.yearGrouping[yr] = S.yearGrouping[yr]
-      .filter(i => i !== idx)
-      .map(i => i > idx ? i - 1 : i);
-  });
-  renderPhotoGrid();
-  toast('Photo removed — ' + S.validFiles.length + ' remaining', 'success');
-}
-
-function handleFiles(files) {
-  const incoming = Array.from(files).filter(f =>
-    (f.type === 'image/jpeg' || f.type === 'image/png') && f.size < 15*1024*1024
-  );
-
-  // Filtrar duplicados por nombre+tamanio
-  const existing = new Set(S.validFiles.map(f => f.name + f.size));
-  const fresh    = incoming.filter(f => !existing.has(f.name + f.size));
-
-  // Acumular sin superar 80
-  const combined = [...S.validFiles, ...fresh].slice(0, 80);
-  const added    = combined.length - S.validFiles.length;
-  const rejected = incoming.length - fresh.length;
-  S.validFiles   = combined;
-
-  document.getElementById('processArea').style.display = 'block';
-  renderPhotoGrid();
-
-  const count = S.validFiles.length;
-  if (added > 0 && count >= 15 && count <= 80)
-    toast(added + ' photos added — ' + count + ' total ✓', 'success');
-  else if (added > 0 && count < 15)
-    toast(count + ' photos — need at least 15', 'error');
-  else if (added === 0 && rejected > 0)
-    toast('Photos already in the list', 'error');
-  if (count > 80)
-    toast('Maximum 80 photos reached', 'error');
-}
-
-function proceedToGrouping() {
-  document.getElementById('check1').textContent = '✓';
-  document.getElementById('dot1').classList.add('done');
-  unlock(2);
-  goTo(2);
-}
-
-// ════════════════════════════════════════════════
-// STEP 2: YEAR GROUPING
-// ════════════════════════════════════════════════
-let selectedYear = null;
-let reviewMode = false;
-
-function generateYearButtons() {
-  const start = parseInt(document.getElementById('yearStart').value);
-  const end   = parseInt(document.getElementById('yearEnd').value);
-  if (!start || !end || start > end || (end-start) > 20) {
-    toast('Invalid year range (max 20 years)', 'error'); return;
-  }
-  S.yearGrouping = {};
-  for (let y = start; y <= end; y++) S.yearGrouping[y] = [];
-
-  const container = document.getElementById('yearButtons');
-  container.innerHTML = '';
-  for (let y = start; y <= end; y++) {
-    const btn = document.createElement('button');
-    btn.className = 'year-btn'; btn.id = `yearbtn_${y}`;
-    btn.innerHTML = `<span>${y}</span><span class="year-btn-count" id="count_${y}">0</span>`;
-    btn.onclick = () => toggleYearSelection(y);
-    container.appendChild(btn);
-  }
-  document.getElementById('yearButtonsContainer').style.display = 'block';
-  document.getElementById('groupingPhotosContainer').style.display = 'block';
-  populateGroupingPhotos();
-  toast('Select a year, then click photos to assign', 'success');
-}
-
-function toggleYearSelection(year) {
-  if (selectedYear === year) {
-    if (reviewMode) {
-      reviewMode = false; selectedYear = null;
-      document.querySelectorAll('.year-btn').forEach(b => b.classList.remove('selected'));
-      updateModeIndicator(); populateGroupingPhotos();
-    } else {
-      if (!S.yearGrouping[year]?.length) { toast(`No photos in ${year}`, 'error'); return; }
-      reviewMode = true; updateModeIndicator(); showYearPhotos(year);
-    }
-  } else {
-    selectedYear = year; reviewMode = false;
-    document.querySelectorAll('.year-btn').forEach(b => b.classList.remove('selected'));
-    document.getElementById(`yearbtn_${year}`)?.classList.add('selected');
-    updateModeIndicator(); populateGroupingPhotos();
-  }
-}
-
-function updateModeIndicator() {
-  const el = document.getElementById('modeIndicator');
-  if (!selectedYear && !S.selectMode) { el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  if (S.selectMode) {
-    el.className = 'mode-indicator';
-    el.innerHTML = '<strong>\u2713 Select Mode:</strong> Click photos to select, then assign to <strong>' + (selectedYear || 'a year') + '</strong>.';
-  } else if (reviewMode) {
-    el.className = 'mode-indicator review';
-    el.innerHTML = '<strong>\ud83d\udccb Review Mode:</strong> Viewing photos in ' + selectedYear + '. Click to remove.';
-  } else {
-    el.className = 'mode-indicator';
-    el.innerHTML = '<strong>\u270f\ufe0f Assign Mode:</strong> Click photos to assign to <strong>' + selectedYear + '</strong>. Click year again to review.';
-  }
-  updateSelectToolbar();
-}
-
-function populateGroupingPhotos() {
-  const grid     = document.getElementById('groupingPhotos');
-  grid.innerHTML = '';
-  const assigned   = new Set(Object.values(S.yearGrouping).flat());
-  const unassigned = S.validFiles.map((f,i) => i).filter(i => !assigned.has(i));
-
-  document.getElementById('photosGridTitle').textContent = 'Available Photos';
-  document.getElementById('photosRemaining').textContent = unassigned.length;
-
-  if (unassigned.length === 0) {
-    grid.style.display = 'none';
-    document.getElementById('emptyState').style.display = 'block';
-    document.getElementById('btnNext2').disabled = false;
-    exitSelectMode();
-    return;
-  }
-  grid.style.display = 'grid';
-  document.getElementById('emptyState').style.display = 'none';
-
-  unassigned.forEach(origIdx => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const div = document.createElement('div');
-      div.className = 'grouping-photo' + (S.selectedIndices.has(origIdx) ? ' selected-multi' : '');
-      div.dataset.idx = origIdx;
-      div.innerHTML   = '<img src="' + e.target.result + '">';
-      div.onclick = () => {
-        if (S.selectMode) {
-          togglePhotoSelection(origIdx, div);
-        } else {
-          assignPhotoToYear(origIdx);
-        }
-      };
-      grid.appendChild(div);
-    };
-    reader.readAsDataURL(S.validFiles[origIdx]);
-  });
-  updateSelectToolbar();
-}
-
-function toggleSelectMode() {
-  S.selectMode = !S.selectMode;
-  if (!S.selectMode) exitSelectMode();
-  else {
-    document.getElementById('selectToolbar').style.display = 'flex';
-    document.getElementById('btnSelectMode').textContent   = 'Cancel';
-    document.getElementById('btnSelectMode').style.background = 'var(--red-bg)';
-    updateModeIndicator();
-  }
-}
-
-function exitSelectMode() {
-  S.selectMode = false;
-  S.selectedIndices.clear();
-  document.getElementById('selectToolbar').style.display  = 'none';
-  const btn = document.getElementById('btnSelectMode');
-  if (btn) { btn.textContent = 'Select'; btn.style.background = ''; }
-  updateSelectToolbar();
-}
-
-function togglePhotoSelection(origIdx, div) {
-  if (S.selectedIndices.has(origIdx)) {
-    S.selectedIndices.delete(origIdx);
-    div.classList.remove('selected-multi');
-  } else {
-    S.selectedIndices.add(origIdx);
-    div.classList.add('selected-multi');
-  }
-  updateSelectToolbar();
-}
-
-function selectAllVisible() {
-  const assigned = new Set(Object.values(S.yearGrouping).flat());
-  S.validFiles.forEach((_, i) => { if (!assigned.has(i)) S.selectedIndices.add(i); });
-  populateGroupingPhotos();
-}
-
-function clearSelection() {
-  S.selectedIndices.clear();
-  populateGroupingPhotos();
-}
-
-function updateSelectToolbar() {
-  const n   = S.selectedIndices.size;
-  const el  = document.getElementById('selectCount');
-  const btn = document.getElementById('btnAssignSelected');
-  if (el)  el.textContent  = n + ' selected';
-  if (btn) btn.disabled    = (n === 0 || !selectedYear);
-  if (btn && selectedYear) btn.textContent = 'Assign to ' + selectedYear;
-  else if (btn)            btn.textContent = 'Assign to year';
-}
-
-function assignSelectedToYear() {
-  if (!selectedYear) { toast('Select a year first', 'error'); return; }
-  if (S.selectedIndices.size === 0) { toast('No photos selected', 'error'); return; }
-  let count = 0;
-  S.selectedIndices.forEach(idx => {
-    if (!S.yearGrouping[selectedYear].includes(idx)) {
-      S.yearGrouping[selectedYear].push(idx);
-      count++;
-    }
-  });
-  document.getElementById('count_' + selectedYear).textContent = S.yearGrouping[selectedYear].length;
-  exitSelectMode();
-  populateGroupingPhotos();
-  toast(count + ' photos assigned to ' + selectedYear, 'success');
-}
-
-function assignPhotoToYear(photoIndex) {
-  if (!selectedYear) { toast('Select a year first', 'error'); return; }
-  if (reviewMode) return;
-  S.yearGrouping[selectedYear].push(photoIndex);
-  document.getElementById(`count_${selectedYear}`).textContent = S.yearGrouping[selectedYear].length;
-  populateGroupingPhotos();
-  toast(`Assigned to ${selectedYear}`, 'success');
-}
-
-function showYearPhotos(year) {
-  const grid = document.getElementById('groupingPhotos');
-  grid.innerHTML = ''; grid.style.display = 'grid';
-  document.getElementById('emptyState').style.display = 'none';
-  document.getElementById('photosGridTitle').textContent = `Photos in ${year}`;
-  document.getElementById('photosRemaining').textContent = S.yearGrouping[year].length;
-
-  S.yearGrouping[year].forEach(idx => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const div = document.createElement('div');
-      div.className = 'grouping-photo removing';
-      div.innerHTML = `<img src="${e.target.result}">`;
-      div.onclick = () => removePhotoFromYear(year, idx);
-      grid.appendChild(div);
-    };
-    reader.readAsDataURL(S.validFiles[idx]);
-  });
-}
-
-function removePhotoFromYear(year, photoIndex) {
-  S.yearGrouping[year] = S.yearGrouping[year].filter(i => i !== photoIndex);
-  document.getElementById(`count_${year}`).textContent = S.yearGrouping[year].length;
-  if (S.yearGrouping[year].length === 0) {
-    reviewMode = false; selectedYear = null;
-    document.querySelectorAll('.year-btn').forEach(b => b.classList.remove('selected'));
-    updateModeIndicator(); populateGroupingPhotos();
-  } else {
-    showYearPhotos(year);
-  }
-  toast('Photo removed', 'success');
-}
-
-async function proceedToQuestionnaire() {
-  showLoad('Calculating Pattern...', 'Selecting optimal layouts for your photos');
-  try {
-    // 1 — crear sesion
-    const sessRes = await fetch('/lifebound/api/session/start', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    if (!sessRes.ok) throw new Error('Could not create session');
-    const { session_id } = await sessRes.json();
-    S.sessionId = session_id;
-
-    // 2 — obtener patron
-    const numYears = Object.keys(S.yearGrouping).filter(y => S.yearGrouping[y].length > 0).length;
-    const patRes = await fetch('/lifebound/api/pattern', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ photo_count: S.validFiles.length, num_years: numYears || 1 })
-    });
-    if (!patRes.ok) throw new Error((await patRes.json()).error);
-    const pattern = await patRes.json();
-
-    // 3 — enriquecer patron con slots
-    const yearCounts = {};
-    Object.keys(S.yearGrouping).forEach(yr => {
-      if (S.yearGrouping[yr].length > 0) yearCounts[yr] = S.yearGrouping[yr].length;
-    });
-    const slotsRes = await fetch('/lifebound/api/slots', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ pattern, year_grouping: yearCounts, dpr: window.devicePixelRatio || 1 })
-    });
-    if (!slotsRes.ok) throw new Error((await slotsRes.json()).error);
-    S.currentPattern = await slotsRes.json();
-    S.identityMap    = S.currentPattern.identity_map || {};
-
-    hideLoad();
-    generateDynamicQuestionnaire(S.currentPattern);
-    document.getElementById('check2').textContent = '✓';
-    document.getElementById('dot2').classList.add('done');
-    unlock(3); goTo(3);
-  } catch(e) {
-    hideLoad(); toast('Error: ' + e.message, 'error');
-  }
-}
-
-
-// ════════════════════════════════════════════════
-// TEMPLATE CONFIG (icons & field names)
-// ════════════════════════════════════════════════
-const TMPL_META = {
-  'evidence_single_moment_v1':  { name:'Single Moment',  icon:'🖼️',      photos:1 },
-  'evidence_single_moment_v2':  { name:'Single Moment+', icon:'🖼️✨',    photos:1 },
-  'evidence_milestone_v1':      { name:'Milestone',      icon:'🎯',      photos:1 },
-  'evidence_comparison_v1':     { name:'Comparison',     icon:'🖼️🖼️',  photos:2 },
-  'evidence_comparison_v2':     { name:'Comparison V2',  icon:'⬆️⬇️',   photos:2 },
-  'evidence_before_after_v1':   { name:'Before / After', icon:'⏮️⏭️',   photos:2 },
-  'evidence_sequence_v1':       { name:'Sequence',       icon:'🖼️🖼️🖼️',photos:3 },
-  'evidence_sequence_v2':       { name:'Sequence V2',    icon:'🖼️📷📷', photos:3 },
-  'evidence_event_timeline_v1': { name:'Timeline',       icon:'⏱️',      photos:3 },
-  'evidence_grid_v1':           { name:'Photo Grid',     icon:'📷',      photos:4 },
-  'evidence_grid_v2':           { name:'Grid V2',        icon:'▦',       photos:4 },
-  'evidence_daily_life_v1':     { name:'Daily Life',     icon:'🏡',      photos:4 },
-};
-
-// ════════════════════════════════════════════════
-// STEP 3: DYNAMIC QUESTIONNAIRE
-// ════════════════════════════════════════════════
-function buildPhotoIdToFileMap() {
-  const map      = {};
-  const yearKeys = Object.keys(S.yearGrouping).filter(y => S.yearGrouping[y].length > 0).sort();
-  let cursor     = 0;
-  const allIds   = Object.keys(S.identityMap);
-  yearKeys.forEach(yr => {
-    S.yearGrouping[yr].forEach(fileIdx => {
-      if (cursor < allIds.length) { map[allIds[cursor]] = S.validFiles[fileIdx]; cursor++; }
-    });
-  });
-  return map;
-}
-
-function generateDynamicQuestionnaire(pattern) {
-  const container    = document.getElementById('questionnaireContainer');
-  document.getElementById('patternInfo').style.display = 'block';
-  document.getElementById('patternId').textContent     = pattern.pattern_id;
-  document.getElementById('patternPages').textContent  = pattern.photo_pages;
-  document.getElementById('patternTotal').textContent  = pattern.total_pages;
-  document.getElementById('patternRange').textContent  = pattern.range_type;
-  container.innerHTML = '';
-
-  const photoIdToFile = buildPhotoIdToFileMap();
-  const plan          = pattern.plan || [];
-
-  plan.forEach(page => {
-    const tid     = page.template;
-    const meta    = TMPL_META[tid] || { name: tid, icon: '\ud83d\udcc4', photos: 1 };
-    const pageNum = page.page;
-    const slots   = page.slots || [];
-    const years   = [...new Set(slots.map(s => s.year))].filter(Boolean).join(', ') || '\u2014';
-
-    const section = document.createElement('div');
-    section.className = 'page-section';
-    section.innerHTML = `
-      <div class="page-header">
-        <h3>Page ${pageNum}</h3>
-        <span class="template-badge">${meta.name}</span>
-        <span class="year-badge">${years}</span>
-      </div>
-      <div class="page-photos page-photos-wrap" id="photos_page_${pageNum}"></div>
-      <div class="form-fields">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Date <span style="color:var(--text3)">(optional)</span></label>
-            <input type="text" name="page_${pageNum}_date" placeholder="e.g. Dec 2022">
-          </div>
-          <div class="form-group">
-            <label>Location <span style="color:var(--text3)">(optional)</span></label>
-            <input type="text" name="page_${pageNum}_location" placeholder="e.g. Miami, FL">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Description <span style="color:var(--red)">*</span></label>
-          <textarea name="page_${pageNum}_description" rows="2" required placeholder="Briefly describe this moment for the USCIS officer..."></textarea>
-        </div>
-      </div>`;
-    container.appendChild(section);
-
-    // Renderizar fotos reales con controles de swap
-    const photosRow = document.getElementById('photos_page_' + pageNum);
-    if (slots.length === 0) {
-      photosRow.innerHTML = '<div class="page-photo-slot" style="display:flex;align-items:center;justify-content:center;font-size:1.8rem;opacity:.5;">' + meta.icon + '</div>';
-    } else {
-      renderPageSlots(photosRow, slots, photoIdToFile, pageNum);
-    }
-  });
-}
-
-function renderPageSlots(container, slots, photoIdToFile, pageNum) {
-  container.innerHTML = '';
-  // Construir fila con fotos intercaladas de botones swap
-  const wrap = document.createElement('div');
-  wrap.className = 'page-photos-controls';
-
-  slots.forEach((slot, si) => {
-    // Foto
-    const slotDiv = document.createElement('div');
-    slotDiv.className = 'page-photo-slot';
-    slotDiv.dataset.slotIdx = si;
-    const file = photoIdToFile[slot.photo_id];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = e => {
-        slotDiv.innerHTML = '<img src="' + e.target.result + '"><span class="slot-label">' + slot.year + '</span>';
-      };
-      reader.readAsDataURL(file);
-    } else {
-      slotDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.4rem;opacity:.4;">\ud83d\uddbc\ufe0f</div>';
-    }
-    wrap.appendChild(slotDiv);
-
-    // Boton swap entre este slot y el siguiente
-    if (si < slots.length - 1) {
-      const btn = document.createElement('button');
-      btn.className = 'swap-btn';
-      btn.title     = 'Swap photos ' + (si+1) + ' and ' + (si+2);
-      btn.innerHTML = '\u21c4';
-      btn.onclick   = () => swapSlots(pageNum, si, si + 1);
-      wrap.appendChild(btn);
-    }
-  });
-
-  container.appendChild(wrap);
-}
-
-function swapSlots(pageNum, idxA, idxB) {
-  // Buscar la pagina en el plan
-  const page = S.currentPattern.plan.find(p => p.page === pageNum);
-  if (!page) return;
-
-  // Intercambiar photo_ids en el plan
-  const tmp           = page.slots[idxA].photo_id;
-  page.slots[idxA].photo_id = page.slots[idxB].photo_id;
-  page.slots[idxB].photo_id = tmp;
-
-  // Tambien intercambiar years
-  const tmpY          = page.slots[idxA].year;
-  page.slots[idxA].year = page.slots[idxB].year;
-  page.slots[idxB].year = tmpY;
-
-  // Actualizar identity_map
-  S.identityMap[page.slots[idxA].photo_id].slot = idxA + 1;
-  S.identityMap[page.slots[idxB].photo_id].slot = idxB + 1;
-
-  // Re-renderizar solo esta pagina
-  const container    = document.getElementById('photos_page_' + pageNum);
-  const photoIdToFile = buildPhotoIdToFileMap();
-  renderPageSlots(container, page.slots, photoIdToFile, pageNum);
-  toast('Photos swapped', 'success');
-}
-
-function validateQuestionnaire() {
-  const required = document.querySelectorAll('#questionnaireContainer [required]');
-  let valid = true;
-  required.forEach(f => {
-    if (!f.value.trim()) { f.classList.add('error'); valid = false; }
-    else f.classList.remove('error');
-  });
-  if (!valid) { toast('Please fill all required descriptions', 'error'); return; }
-
-  S.questionnaireData = {};
-  document.querySelectorAll('#questionnaireContainer input, #questionnaireContainer textarea').forEach(f => {
-    if (f.name) S.questionnaireData[f.name] = f.value;
-  });
-
-  document.getElementById('check3').textContent = '✓';
-  document.getElementById('dot3').classList.add('done');
-  buildSummary();
-  unlock(4); goTo(4);
-}
-
-// ════════════════════════════════════════════════
-// STEP 4: SUMMARY + GENERATE
-// ════════════════════════════════════════════════
-const PATTERN_NAMES = ['The Journey','Our Story','Milestones','Together','Through the Years','A Life Shared','Moments','Side by Side','Our Chapter','The Path','Building Together','Always','Hand in Hand','Every Season','Home'];
-function patternAlias(pid) {
-  let h = 0;
-  for (let i = 0; i < pid.length; i++) h = (h * 31 + pid.charCodeAt(i)) & 0xffffffff;
-  return PATTERN_NAMES[Math.abs(h) % PATTERN_NAMES.length];
-}
-function buildSummary() {
-  const name = document.getElementById('applicantName').value || 'Not specified';
-  document.getElementById('summaryPhotos').textContent    = S.validFiles.length + ' photos';
-  document.getElementById('summaryPages').textContent     = S.currentPattern.total_pages + ' pages';
-  document.getElementById('summaryApplicant').textContent = name;
-  document.getElementById('summaryPattern').textContent   = patternAlias(S.currentPattern.pattern_id);
-  document.getElementById('summaryPhotoPages').textContent= S.currentPattern.photo_pages;
-}
-
-
-async function generatePDF() {
-  showLoad('Compressing photos...', 'Optimizing images for your album');
-  document.getElementById('btnGenerate').disabled = true;
-  try {
-    // 1 — mapear fileIndex a photo_id
-    const idxToId = {};
-    const yearKeys = Object.keys(S.yearGrouping).filter(y => S.yearGrouping[y].length > 0).sort();
-    let cursor = 0;
-    const allIds = Object.keys(S.identityMap);
-    yearKeys.forEach(yr => {
-      S.yearGrouping[yr].forEach(fi => {
-        if (cursor < allIds.length) { idxToId[fi] = allIds[cursor]; cursor++; }
-      });
-    });
-
-    // 2 — comprimir en Canvas
-    const compMap = {};
-    await Promise.all(Object.entries(idxToId).map(([fi, pid]) => {
-      const dims = S.identityMap[pid];
-      if (!dims) return Promise.resolve();
-      return new Promise(res => {
-        const img = new Image();
-        const ou  = URL.createObjectURL(S.validFiles[parseInt(fi)]);
-        img.onload = () => {
-          const c = document.createElement('canvas');
-          c.width = dims.w; c.height = dims.h;
-          const ctx = c.getContext('2d');
-          const sc  = Math.max(dims.w/img.width, dims.h/img.height);
-          ctx.drawImage(img, (dims.w-img.width*sc)/2, (dims.h-img.height*sc)/2, img.width*sc, img.height*sc);
-          c.toBlob(b => { compMap[pid] = b; URL.revokeObjectURL(ou); res(); }, 'image/jpeg', 0.88);
-        };
-        img.src = ou;
-      });
-    }));
-
-    showLoad('Generating PDF...', 'Assembling your USCIS evidence album');
-
-    // 3 — un solo request: fotos + plan + payload juntos
-    const fdg = new FormData();
-    Object.entries(compMap).forEach(([pid, b]) => fdg.append('photos', b, pid + '.jpg'));
-    fdg.append('payload', JSON.stringify({
-      plan: S.currentPattern.plan,
-      questionnaire_data: S.questionnaireData,
-      applicant_info: {
-        name:          document.getElementById('applicantName').value,
-        spouse:        document.getElementById('spouseName').value,
-        address:       document.getElementById('applicantAddress').value,
-        office:        document.getElementById('fieldOffice').value,
-        a_number:      document.getElementById('aNumber').value,
-        receipt_n400:  document.getElementById('receiptN400').value,
-        receipt_i751:  document.getElementById('receiptI751').value,
-        interview_date:document.getElementById('interviewDate').value,
-        interview_time:document.getElementById('interviewTime').value,
-      }
-    }));
-    const gr = await fetch('/lifebound/api/generate', {method:'POST', body: fdg});
-    if (!gr.ok) { const e = await gr.json(); throw new Error(e.error || 'Generation failed'); }
-
-    // 5 — descargar
-    const blob = await gr.blob();
-    const burl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const nm = (document.getElementById('applicantName').value || 'album').replace(/\s+/g,'_');
-    a.href = burl; a.download = 'USCIS_Album_' + nm + '.pdf';
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(burl);
-
-    hideLoad();
-    toast('Album downloaded successfully!', 'success');
-    document.getElementById('check4').textContent = '✓';
-    document.getElementById('dot4').classList.add('done');
-  } catch(e) {
-    hideLoad(); toast('Error: ' + e.message, 'error');
-  } finally {
-    document.getElementById('btnGenerate').disabled = false;
-  }
-}
-
-
-// ════════════════════════════════════════════════
-// UTILS
-// ════════════════════════════════════════════════
-function showLoad(title, sub) {
-  document.getElementById('ltitle').textContent = title;
-  document.getElementById('lsub').textContent   = sub;
-  document.getElementById('loadingOverlay').classList.add('show');
-}
-function hideLoad() {
-  document.getElementById('loadingOverlay').classList.remove('show');
-}
-function toast(msg, type='') {
-  const stack = document.getElementById('toastStack');
-  const el    = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.innerHTML = (type==='success'?'✅ ':type==='error'?'❌ ':'◈ ')+msg;
-  stack.appendChild(el);
-  setTimeout(()=>el.remove(), 3500);
-}
-</script>
 </body>
 </html>

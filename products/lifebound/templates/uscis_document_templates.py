@@ -1,6 +1,17 @@
 """
-uscis_document_templates.py
+templates/uscis_document_templates.py
+
 Portada y carta de presentación para entrevista USCIS.
+
+Cambios vs versión anterior
+----------------------------
+- Eliminados los `fields` dict duplicados en cada clase.
+- Cada clase declara `shared_fields` (keys de CASE_SHARED_FIELDS)
+  y `own_fields` (campos exclusivos).
+- La propiedad `fields` en BaseTemplate los une automáticamente.
+- Los métodos generate() no cambian — reciben data ya mergeado.
+- receipts_N y receipts_I reemplazan los campos fijos n400_receipt / i751_receipt.
+  El backend itera dinámicamente los forms que el usuario activó.
 """
 from templates.base_template import BaseTemplate
 from templates.pdf_template_mixin import PdfTemplateMixin
@@ -11,19 +22,22 @@ class CoverPageTemplate(BaseTemplate, PdfTemplateMixin):
     id          = "cover_page"
     name        = "Cover Page"
     description = "Portada para documentos de entrevista N-400 / I-751"
-    fields = {
-        'field_office_name':    {'label':'Field Office Name',   'type':'text','required':True, 'default':'Your Field Office Name'},
-        'field_office_address': {'label':'Field Office Address','type':'text','required':True, 'default':'Address of Your USCIS Field Office'},
-        'attention':            {'label':'Attention',           'type':'text','required':True, 'default':'Attn: I-751/N-400 Interview'},
-        'applicant_name':       {'label':'Applicant Name',      'type':'text','required':True, 'default':'Jane Smith'},
-        'spouse_name':          {'label':'USC Spouse Name',     'type':'text','required':True, 'default':'John Smith'},
-        'address':              {'label':'Address',             'type':'text','required':True, 'default':'Your address here'},
-        'n400_receipt':         {'label':'N-400 Receipt #',     'type':'text','required':True, 'default':'IOE0000000000'},
-        'i751_receipt':         {'label':'I-751 Receipt #',     'type':'text','required':True, 'default':'IOE0000000000'},
-        'interview_date':       {'label':'Interview Date',      'type':'text','required':True, 'default':'January 01, 20XX'},
-        'interview_time':       {'label':'Interview Time',      'type':'text','required':True, 'default':'9:30 AM'},
-        'applicant_number':     {'label':'Applicant A Number',  'type':'text','required':False,'default':'Your A Number'},
-    }
+
+    shared_fields = [
+        "field_office_name",
+        "field_office_address",
+        "attention",
+        "applicant_name",
+        "spouse_name",
+        "address",
+        "receipts_N",       # dict  { "N-400": "IOE...", "N-600": "IOE..." }
+        "receipts_I",       # dict  { "I-751": "IOE...", "I-130": "IOE..." }
+        "interview_date",
+        "interview_time",
+        "applicant_number",
+    ]
+
+    own_fields = {}  # todos sus campos son compartidos
 
     def generate(self, data):
         self._init_pdf()
@@ -31,24 +45,38 @@ class CoverPageTemplate(BaseTemplate, PdfTemplateMixin):
         self.draw_header(c, data.get('field_office_name',''), data.get('field_office_address',''), data.get('attention',''))
 
         y = self.height - 2.5*inch
+
+        # Datos del solicitante
         for lbl, key in [("Applicant:",'applicant_name'),("USC Spouse:",'spouse_name'),("Address:",'address')]:
             c.setFont("Helvetica-Bold",11); c.drawString(self.margin, y, lbl)
             c.setFont("Helvetica",11);      c.drawString(self.margin+1.5*inch, y, data.get(key,''))
             y -= 20
         y -= 20
-        for lbl, key in [("N-400 Receipt #",'n400_receipt'),("I-751 Receipt #",'i751_receipt')]:
-            c.setFont("Helvetica-Bold",11); c.drawString(self.margin, y, lbl)
-            c.setFont("Helvetica",11);      c.drawString(self.margin+2*inch, y, data.get(key,''))
-            y -= 20
+
+        # Receipts dinámicos — primero serie N, luego serie I
+        for series in ['receipts_N', 'receipts_I']:
+            for form_name, receipt_num in data.get(series, {}).items():
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(self.margin, y, f"{form_name} Receipt #")
+                c.setFont("Helvetica", 11)
+                c.drawString(self.margin + 2*inch, y, receipt_num)
+                y -= 20
+
         y -= 60
-        for title in ["N-400 and I-751","COMBO INTERVIEW","DOCUMENTS"]:
+
+        # Título del combo dinámico según los forms activos
+        all_forms = list(data.get('receipts_N', {}).keys()) + list(data.get('receipts_I', {}).keys())
+        combo_title = " and ".join(all_forms) if all_forms else "COMBO"
+        for title in [combo_title, "COMBO INTERVIEW", "DOCUMENTS"]:
             self.draw_centered_title(c, title, y); y -= 60
+
         y -= 30
         c.setFont("Helvetica-Bold",14)
         for txt in [f"Date of Interview: {data.get('interview_date','')}",
                     f"Time of Interview: {data.get('interview_time','')}"]:
             tw = c.stringWidth(txt,"Helvetica-Bold",14)
             c.drawString((self.width-tw)/2, y, txt); y -= 30
+
         self.draw_footer(c, data.get('applicant_number',''), data.get('applicant_name',''))
         c.showPage(); c.save(); buffer.seek(0)
         return buffer.getvalue()
@@ -58,17 +86,26 @@ class CoverLetterTemplate(BaseTemplate, PdfTemplateMixin):
     id          = "cover_letter"
     name        = "Cover Letter"
     description = "Carta de presentación para entrevista USCIS"
-    fields = {
-        'field_office_name':    {'label':'Field Office Name',   'type':'text','required':True, 'default':'Your Field Office Name'},
-        'field_office_address': {'label':'Field Office Address','type':'text','required':True, 'default':'Address of Your USCIS Field Office'},
-        'attention':            {'label':'Attention',           'type':'text','required':True, 'default':'Attn: I-751/N-400 Interview'},
-        'applicant_name':       {'label':'Applicant Name',      'type':'text','required':True, 'default':'Jane Smith'},
-        'spouse_name':          {'label':'USC Spouse Name',     'type':'text','required':True, 'default':'John Smith'},
-        'address':              {'label':'Address',             'type':'text','required':True, 'default':'Your address here'},
-        'n400_receipt':         {'label':'N-400 Receipt #',     'type':'text','required':True, 'default':'IOE0000000000'},
-        'i751_receipt':         {'label':'I-751 Receipt #',     'type':'text','required':True, 'default':'IOE0000000000'},
-        'applicant_number':     {'label':'Applicant A Number',  'type':'text','required':False,'default':'Your A Number'},
-        'include_tax_years':    {'label':'Tax Years',           'type':'text','required':False,'default':'20XX - 20XX'},
+
+    shared_fields = [
+        "field_office_name",
+        "field_office_address",
+        "attention",
+        "applicant_name",
+        "spouse_name",
+        "address",
+        "receipts_N",       # dict  { "N-400": "IOE...", ... }
+        "receipts_I",       # dict  { "I-751": "IOE...", "I-130": "IOE..." }
+        "applicant_number",
+    ]
+
+    own_fields = {
+        "include_tax_years": {
+            "label":    "Tax Years",
+            "type":     "text",
+            "required": False,
+            "default":  "20XX - 20XX",
+        },
     }
 
     def generate(self, data):
@@ -79,12 +116,20 @@ class CoverLetterTemplate(BaseTemplate, PdfTemplateMixin):
         y -= 12; c.setFont("Helvetica",9); c.drawString(self.margin, y, data.get('field_office_address',''))
         y -= 15; c.setFont("Helvetica-Bold",10); c.drawString(self.margin, y, data.get('attention',''))
 
-        yp = self.height-1.5*inch
+        # Header derecho — receipts dinámicos en una sola línea
+        receipts_N = data.get('receipts_N', {})
+        receipts_I = data.get('receipts_I', {})
+        all_receipts = {**receipts_N, **receipts_I}
+        receipt_line = "  |  ".join(f"{form}: {num}" for form, num in all_receipts.items())
+
+        yp = self.height - 1.5*inch
         c.setFont("Helvetica",8)
-        for txt in [f"Applicant: {data.get('applicant_name','')}",
-                    f"US Citizen Spouse: {data.get('spouse_name','')}",
-                    f"Address: {data.get('address','')}",
-                    f"I-751: {data.get('i751_receipt','')} | N-400: {data.get('n400_receipt','')}"]:
+        for txt in [
+            f"Applicant: {data.get('applicant_name','')}",
+            f"US Citizen Spouse: {data.get('spouse_name','')}",
+            f"Address: {data.get('address','')}",
+            receipt_line,
+        ]:
             c.drawRightString(self.width-self.margin, yp, txt); yp -= 10
 
         yp -= 25
@@ -103,7 +148,7 @@ class CoverLetterTemplate(BaseTemplate, PdfTemplateMixin):
         yp -= 8
         c.setFont("Helvetica-Bold",10); c.drawString(self.margin, yp, "2.   Joint Financials & Cohabitation"); yp -= 18
         c.setFont("Helvetica",9)
-        for doc in [f"Joint Tax Returns ({data.get('include_tax_years','20XX-20XX')})",
+        for doc in [f"Joint Tax Returns ({data.get('include_tax_years','20XX - 20XX')})",
                     "Joint Bank Account Statements","Health & Life Insurance","Car Insurance","Joint Mortgage / Rent Receipts"]:
             c.drawString(self.margin+25, yp, f"○  {doc}"); yp -= 11
         yp -= 8
@@ -122,14 +167,17 @@ class IdentificationPageTemplate(BaseTemplate, PdfTemplateMixin):
     id          = "identification_page"
     name        = "Identification Page"
     description = "Página de documentos de identificación"
-    fields = {
-        'field_office_name':    {'label':'Field Office Name',   'type':'text','required':True, 'default':'Your Field Office Name'},
-        'field_office_address': {'label':'Field Office Address','type':'text','required':True, 'default':'Address of Your USCIS Field Office'},
-        'attention':            {'label':'Attention',           'type':'text','required':True, 'default':'Attn: I-751/N-400 Interview'},
-        'applicant_name':       {'label':'Applicant Name',      'type':'text','required':True, 'default':'JANE SMITH'},
-        'spouse_name':          {'label':'USC Spouse Name',     'type':'text','required':True, 'default':'JOHN SMITH'},
-        'applicant_number':     {'label':'Applicant A Number',  'type':'text','required':False,'default':'Your A Number'},
-    }
+
+    shared_fields = [
+        "field_office_name",
+        "field_office_address",
+        "attention",
+        "applicant_name",
+        "spouse_name",
+        "applicant_number",
+    ]
+
+    own_fields = {}  # todos sus campos son compartidos
 
     def generate(self, data):
         self._init_pdf()
