@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AUREON — Iniciar sesión</title>
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0f172a;
+    --bg2:      #1e293b;
+    --card:     rgba(255,255,255,0.06);
+    --border:   rgba(255,255,255,0.10);
+    --blue:     #1f75fe;
+    --blue-h:   #155dc3;
+    --text:     #f1f5f9;
+    --muted:    #94a3b8;
+    --input-bg: rgba(255,255,255,0.05);
+    --error:    #f87171;
+    --success:  #4ade80;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 0;
+    color: var(--text);
+  }
+
+  /* Fondo igual que Aureon */
+  body::before {
+    content: "";
+    position: fixed;
+    top: -200px; left: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(31,117,254,0.2), transparent 70%);
+    z-index: 0;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    bottom: -200px; right: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(0,200,255,0.15), transparent 70%);
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 420px;
+    padding: 16px;
+    animation: fadeUp .5s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Logo */
+  .brand {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .brand img {
+    width: 52px;
+    margin-bottom: 10px;
+  }
+  .brand h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: var(--text);
+  }
+  .brand p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Card */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px 32px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+  }
+
+  .card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: var(--text);
+  }
+
+  /* Inputs */
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .field input {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .field input:focus {
+    border-color: var(--blue);
+  }
+  .field input.err {
+    border-color: var(--error);
+  }
+
+  /* Botones */
+  .btn {
+    width: 100%;
+    padding: 13px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: .2s ease;
+    font-family: 'Inter', sans-serif;
+  }
+  .btn-primary {
+    background: var(--blue);
+    color: white;
+    margin-top: 8px;
+  }
+  .btn-primary:hover { background: var(--blue-h); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .btn-outline:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.2);
+  }
+
+  .btn-passkey {
+    background: linear-gradient(135deg, rgba(31,117,254,0.2), rgba(0,200,255,0.15));
+    color: var(--text);
+    border: 1px solid rgba(31,117,254,0.4);
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .btn-passkey:hover {
+    border-color: var(--blue);
+    transform: translateY(-1px);
+  }
+
+  /* Divisor */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .divider::before, .divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Mensajes */
+  .msg {
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .msg.error   { background: rgba(248,113,113,.12); color: var(--error);   border: 1px solid rgba(248,113,113,.25); display: block; }
+  .msg.success { background: rgba(74,222,128,.12);  color: var(--success); border: 1px solid rgba(74,222,128,.25);  display: block; }
+
+  /* Footer links */
+  .links {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .links a {
+    color: var(--blue);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .links a:hover { text-decoration: underline; }
+
+  /* Icono SVG pequeño */
+  .icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+  /* Loading spinner */
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="brand">
+    <img src="/static/AureonWeb_150px.png" alt="Aureon">
+    <h1>AUREON</h1>
+    <p>Inicia sesión para continuar</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Bienvenido de vuelta</div>
+
+    <div id="msg" class="msg"></div>
+
+    <!-- Passkey -->
+    <button class="btn btn-passkey" onclick="loginPasskey()">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="8" r="4"/><path d="M12 12v8M8 20h8"/>
+      </svg>
+      Continuar con Passkey / Face ID
+    </button>
+
+    <div class="divider">o usa tu email</div>
+
+    <!-- Form email + contraseña -->
+    <form id="login-form" onsubmit="loginEmail(event)">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="tu@email.com" autocomplete="email" required>
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary" id="btn-login">
+        Iniciar sesión
+      </button>
+    </form>
+
+    <div class="divider">o continúa con</div>
+
+    <!-- OAuth -->
+    <button class="btn btn-outline" onclick="loginOAuth('google')">
+      <svg class="icon" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      Google
+    </button>
+
+    <button class="btn btn-outline" onclick="loginOAuth('github')">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.8c.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10.01 10.01 0 0 0 22 12c0-5.52-4.48-10-10-10z"/>
+      </svg>
+      GitHub
+    </button>
+  </div>
+
+  <div class="links">
+    ¿No tienes cuenta? <a href="/auth/register{{ '?redirect=' + redirect if redirect else '' }}">Crear cuenta</a>
+    &nbsp;·&nbsp;
+    <a href="/auth/forgot-password">¿Olvidaste tu contraseña?</a>
+  </div>
+</div>
+
+<script>
+  // Leer redirect desde query param
+  const params   = new URLSearchParams(location.search);
+  const redirect = params.get('redirect') || '/';
+
+  function showMsg(text, type) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className   = 'msg ' + type;
+  }
+
+  function setLoading(loading) {
+    const btn = document.getElementById('btn-login');
+    btn.disabled  = loading;
+    btn.innerHTML = loading
+      ? '<span class="spinner"></span> Iniciando sesión...'
+      : 'Iniciar sesión';
+  }
+
+  // ── Login con email + contraseña ───────────────────────
+  async function loginEmail(e) {
+    e.preventDefault();
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    setLoading(true);
+    try {
+      const res  = await fetch('/auth/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showMsg(data.error || 'Error al iniciar sesión', 'error');
+        return;
+      }
+
+      saveTokens(data.access_token, data.refresh_token);
+      window.location.href = redirect;
+
+    } catch (err) {
+      showMsg('Error de conexión. Intenta de nuevo.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── Login con Passkey ──────────────────────────────────
+  async function loginPasskey() {
+    if (!window.PublicKeyCredential) {
+      showMsg('Tu navegador no soporta passkeys.', 'error');
+      return;
+    }
+    try {
+      const email = document.getElementById('email').value.trim();
+
+      // Paso 1: obtener challenge
+      const beginRes = await fetch('/auth/passkey/login/begin', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email }),
+      });
+      const options = await beginRes.json();
+
+      // Decodificar challenge y allowCredentials
+      options.challenge = base64ToBuffer(options.challenge);
+      if (options.allowCredentials) {
+        options.allowCredentials = options.allowCredentials.map(c => ({
+          ...c, id: base64ToBuffer(c.id)
+        }));
+      }
+
+      // Paso 2: autenticar con el autenticador
+      const credential = await navigator.credentials.get({ publicKey: options });
+
+      // Paso 3: verificar en el servidor
+      const completeRes = await fetch('/auth/passkey/login/complete', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(credentialToJSON(credential)),
+      });
+      const data = await completeRes.json();
+
+      if (!completeRes.ok) {
+        showMsg(data.error || 'Error con passkey', 'error');
+        return;
+      }
+
+      saveTokens(data.access_token, data.refresh_token);
+      window.location.href = redirect;
+
+    } catch (err) {
+      if (err.name !== 'NotAllowedError') {
+        showMsg('Error al usar passkey: ' + err.message, 'error');
+      }
+    }
+  }
+
+  // ── OAuth ──────────────────────────────────────────────
+  function loginOAuth(provider) {
+    window.location.href = `/auth/oauth/${provider}?redirect=${encodeURIComponent(redirect)}`;
+  }
+
+  // ── Helpers tokens ─────────────────────────────────────
+  function saveTokens(access, refresh) {
+    localStorage.setItem('aureon_token',   access);
+    localStorage.setItem('aureon_refresh', refresh);
+  }
+
+  // ── Helpers WebAuthn ───────────────────────────────────
+  function base64ToBuffer(b64) {
+    const bin = atob(b64.replace(/-/g,'+').replace(/_/g,'/'));
+    return Uint8Array.from(bin, c => c.charCodeAt(0)).buffer;
+  }
+
+  function bufferToBase64(buf) {
+    return btoa(String.fromCharCode(...new Uint8Array(buf)))
+      .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  }
+
+  function credentialToJSON(cred) {
+    return {
+      id:    cred.id,
+      rawId: bufferToBase64(cred.rawId),
+      type:  cred.type,
+      response: {
+        authenticatorData: bufferToBase64(cred.response.authenticatorData),
+        clientDataJSON:    bufferToBase64(cred.response.clientDataJSON),
+        signature:         bufferToBase64(cred.response.signature),
+        userHandle:        cred.response.userHandle ? bufferToBase64(cred.response.userHandle) : null,
+      },
+    };
+  }
+
+  // Si ya hay token válido, redirigir directo
+  const existingToken = localStorage.getItem('aureon_token');
+  if (existingToken) {
+    fetch('/auth/me', {
+      headers: { 'Authorization': 'Bearer ' + existingToken }
+    }).then(r => {
+      if (r.ok) window.location.href = redirect;
+    }).catch(() => {});
+  }
+</script>
+</body>
+</html>

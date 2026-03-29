@@ -14,4 +14,24 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: SECRET_KEY
+        sync: false          # se llena manualmente en Render dashboard
+      - key: APP_URL
+        sync: false          # https://tu-app.onrender.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: WEBAUTHN_RP_ID
+        sync: false          # tu-app.onrender.com (sin https://)
+      - key: WEBAUTHN_ORIGIN
+        sync: false          # https://tu-app.onrender.com
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false          # auth@tudominio.com
     healthCheckPath: /

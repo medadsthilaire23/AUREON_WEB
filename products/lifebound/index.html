@@ -7,14 +7,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/lifebound/static/lifebound.css">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Lifebound — USCIS Album Builder</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/lifebound/static/lifebound.css">
-</head>
 <link rel="icon" type="image/png" href="/lifebound/static/lifebound_150.png">
-<body>
+
+<!-- ── Aureon Auth Guard ──────────────────────────────────
+     Verifica sesión antes de mostrar el producto.
+     Si no hay sesión → redirige a login → consent → lifebound
+──────────────────────────────────────────────────────── -->
+<script>
+  window.AUREON_PRODUCT_ID = "lifebound";
+  window.AUREON_RETURN_URL = "/lifebound";
+</script>
+<script src="/lifebound/static/auth-guard.js"></script>
+
 </head>
 <body>
 

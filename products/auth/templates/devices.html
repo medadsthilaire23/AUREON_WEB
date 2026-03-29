@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mis dispositivos — AUREON</title>
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #0f172a;
+    --bg2:     #1e293b;
+    --card:    rgba(255,255,255,0.06);
+    --border:  rgba(255,255,255,0.10);
+    --blue:    #1f75fe;
+    --blue-h:  #155dc3;
+    --text:    #f1f5f9;
+    --muted:   #94a3b8;
+    --green:   #4ade80;
+    --red:     #f87171;
+    --amber:   #fbbf24;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    color: var(--text);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    top: -200px; left: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(31,117,254,0.15), transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    bottom: -200px; right: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(0,200,255,0.1), transparent 70%);
+    z-index: 0; pointer-events: none;
+  }
+
+  /* Nav */
+  .nav {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+  }
+  .nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+  }
+  .nav-brand img { width: 32px; }
+  .nav-brand span {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: 2px;
+    color: var(--text);
+  }
+  .nav-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .nav-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--blue), #00c8ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    color: white;
+    overflow: hidden;
+  }
+  .nav-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+  /* Layout */
+  .page {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+    animation: fadeUp .4s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .page-header {
+    margin-bottom: 32px;
+  }
+  .page-header h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .page-header p {
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  /* Sección */
+  .section {
+    margin-bottom: 36px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .section-action {
+    font-size: 12px;
+    color: var(--red);
+    background: transparent;
+    border: 1px solid rgba(248,113,113,.25);
+    border-radius: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: .2s;
+  }
+  .section-action:hover {
+    background: rgba(248,113,113,.1);
+  }
+
+  /* Device / Session card */
+  .item-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 10px;
+    transition: border-color .2s;
+  }
+  .item-card:hover { border-color: rgba(255,255,255,0.18); }
+  .item-card.current {
+    border-color: rgba(31,117,254,.4);
+    background: rgba(31,117,254,.06);
+  }
+
+  /* Icono del dispositivo */
+  .device-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--muted);
+  }
+  .device-icon svg { width: 20px; height: 20px; }
+
+  /* Info */
+  .item-info { flex: 1; min-width: 0; }
+  .item-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .item-meta {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Badges */
+  .badge {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 20px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge-current  { background: rgba(31,117,254,.2);  color: #60a5fa; border: 1px solid rgba(31,117,254,.3); }
+  .badge-trusted  { background: rgba(74,222,128,.12); color: var(--green); border: 1px solid rgba(74,222,128,.25); }
+  .badge-active   { background: rgba(74,222,128,.12); color: var(--green); border: 1px solid rgba(74,222,128,.25); }
+
+  /* Acciones */
+  .item-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .btn-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: .2s;
+    font-size: 13px;
+  }
+  .btn-icon:hover { background: rgba(255,255,255,.08); color: var(--text); }
+  .btn-icon.danger:hover { background: rgba(248,113,113,.12); color: var(--red); border-color: rgba(248,113,113,.3); }
+  .btn-icon svg { width: 14px; height: 14px; }
+
+  /* Empty state */
+  .empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--muted);
+    font-size: 13px;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+  }
+
+  /* Danger zone */
+  .danger-zone {
+    background: rgba(248,113,113,.06);
+    border: 1px solid rgba(248,113,113,.2);
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .danger-zone-text h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--red);
+    margin-bottom: 4px;
+  }
+  .danger-zone-text p {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .btn-danger {
+    padding: 10px 18px;
+    background: transparent;
+    border: 1px solid rgba(248,113,113,.4);
+    border-radius: 8px;
+    color: var(--red);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: .2s;
+    white-space: nowrap;
+  }
+  .btn-danger:hover { background: rgba(248,113,113,.12); }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 13px;
+    color: var(--text);
+    z-index: 100;
+    transition: transform .3s ease;
+    white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.success { border-color: rgba(74,222,128,.3); color: var(--green); }
+  .toast.error   { border-color: rgba(248,113,113,.3); color: var(--red); }
+
+  /* Modal confirm */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 50;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    max-width: 360px;
+    width: 90%;
+    animation: fadeUp .3s ease;
+  }
+  .modal h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .modal p { font-size: 13px; color: var(--muted); margin-bottom: 24px; line-height: 1.6; }
+  .modal-actions { display: flex; gap: 10px; }
+  .modal-actions button {
+    flex: 1;
+    padding: 11px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: .2s;
+  }
+  .modal-cancel {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .modal-cancel:hover { background: rgba(255,255,255,.05); }
+  .modal-confirm {
+    background: var(--red);
+    border: none;
+    color: white;
+  }
+  .modal-confirm:hover { filter: brightness(1.1); }
+
+  .spinner {
+    display: inline-block;
+    width: 13px; height: 13px;
+    border: 2px solid rgba(255,255,255,.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="nav">
+  <a class="nav-brand" href="/">
+    <img src="/static/AureonWeb_150px.png" alt="Aureon">
+    <span>AUREON</span>
+  </a>
+  <div class="nav-user">
+    <div class="nav-avatar" id="nav-avatar"></div>
+    <span id="nav-name">—</span>
+  </div>
+</nav>
+
+<!-- Page -->
+<main class="page">
+  <div class="page-header">
+    <h1>Seguridad y dispositivos</h1>
+    <p>Administra los dispositivos y sesiones activas de tu cuenta Aureon.</p>
+  </div>
+
+  <!-- Sesiones activas -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">Sesiones activas</div>
+      <button class="section-action" onclick="confirmRevokeAll()">
+        Cerrar todas
+      </button>
+    </div>
+    <div id="sessions-list"><div class="empty">Cargando sesiones...</div></div>
+  </div>
+
+  <!-- Dispositivos -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">Dispositivos registrados</div>
+    </div>
+    <div id="devices-list"><div class="empty">Cargando dispositivos...</div></div>
+  </div>
+
+  <!-- Danger zone -->
+  <div class="danger-zone">
+    <div class="danger-zone-text">
+      <h3>Cerrar sesión en todos los dispositivos</h3>
+      <p>Se cerrará tu sesión en todos los navegadores y dispositivos. Recibirás un email de confirmación.</p>
+    </div>
+    <button class="btn-danger" onclick="confirmRevokeAll()">
+      Cerrar todo
+    </button>
+  </div>
+</main>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Modal de confirmación -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="modal-title">¿Confirmar acción?</h3>
+    <p id="modal-body">Esta acción no se puede deshacer.</p>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="modal-confirm" id="modal-confirm-btn" onclick="modalConfirmAction()">
+        Confirmar
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const token      = localStorage.getItem('aureon_token');
+  let currentSessionId = null;
+  let pendingAction    = null;
+
+  if (!token) {
+    window.location.href = '/auth/login?redirect=/auth/devices';
+  }
+
+  const authHeaders = {
+    'Authorization': 'Bearer ' + token,
+    'Content-Type':  'application/json',
+  };
+
+  // ══════════════════════════════════════════════════════
+  // INIT
+  // ══════════════════════════════════════════════════════
+
+  async function init() {
+    try {
+      const [sessRes, devRes, meRes] = await Promise.all([
+        fetch('/auth/sessions', { headers: authHeaders }),
+        fetch('/auth/devices',  { headers: authHeaders }),
+        fetch('/auth/me',       { headers: authHeaders }),
+      ]);
+
+      if (meRes.ok) {
+        const me = await meRes.json();
+        renderNav(me);
+      }
+
+      if (sessRes.ok) {
+        const data = await sessRes.json();
+        currentSessionId = data.current_session;
+        renderSessions(data.sessions);
+      }
+
+      if (devRes.ok) {
+        const data = await devRes.json();
+        renderDevices(data.devices);
+      }
+
+    } catch (e) {
+      showToast('Error al cargar datos', 'error');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  // RENDER
+  // ══════════════════════════════════════════════════════
+
+  function renderNav(user) {
+    const av = document.getElementById('nav-avatar');
+    if (user.avatar_url) {
+      av.innerHTML = `<img src="${user.avatar_url}" alt="${user.name}">`;
+    } else {
+      av.textContent = user.name.charAt(0).toUpperCase();
+    }
+    document.getElementById('nav-name').textContent = user.name;
+  }
+
+  function renderSessions(sessions) {
+    const el = document.getElementById('sessions-list');
+    if (!sessions.length) {
+      el.innerHTML = '<div class="empty">No hay sesiones activas.</div>';
+      return;
+    }
+
+    el.innerHTML = sessions.map(s => {
+      const isCurrent = s.id === currentSessionId;
+      const device    = s.device;
+      const name      = device?.device_name || 'Dispositivo desconocido';
+      const ip        = s.ip || '—';
+      const time      = timeAgo(s.last_active_at);
+
+      return `
+        <div class="item-card ${isCurrent ? 'current' : ''}">
+          <div class="device-icon">${deviceIcon(device?.os)}</div>
+          <div class="item-info">
+            <div class="item-name">
+              ${escHtml(name)}
+              ${isCurrent ? '<span class="badge badge-current">Sesión actual</span>' : ''}
+              <span class="badge badge-active">Activa</span>
+            </div>
+            <div class="item-meta">IP ${escHtml(ip)} · ${time}</div>
+          </div>
+          <div class="item-actions">
+            ${!isCurrent ? `
+              <button class="btn-icon danger" title="Cerrar sesión"
+                      onclick="confirmRevokeSession('${s.id}', '${escHtml(name)}')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderDevices(devices) {
+    const el = document.getElementById('devices-list');
+    if (!devices.length) {
+      el.innerHTML = '<div class="empty">No hay dispositivos registrados.</div>';
+      return;
+    }
+
+    el.innerHTML = devices.map(d => {
+      const time = d.last_seen_at ? timeAgo(d.last_seen_at) : 'Nunca';
+      return `
+        <div class="item-card">
+          <div class="device-icon">${deviceIcon(d.os)}</div>
+          <div class="item-info">
+            <div class="item-name">
+              ${escHtml(d.device_name || 'Dispositivo desconocido')}
+              ${d.is_trusted ? '<span class="badge badge-trusted">✓ Confiable</span>' : ''}
+            </div>
+            <div class="item-meta">
+              ${escHtml(d.ip || '—')}
+              ${d.country ? ' · ' + escHtml(d.country) : ''}
+              · Visto ${time}
+            </div>
+          </div>
+          <div class="item-actions">
+            ${!d.is_trusted ? `
+              <button class="btn-icon" title="Marcar como confiable"
+                      onclick="trustDevice('${d.id}', this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              </button>
+            ` : ''}
+            <button class="btn-icon danger" title="Eliminar dispositivo"
+                    onclick="confirmDeleteDevice('${d.id}', '${escHtml(d.device_name || '')}')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14H6L5 6"/>
+                <path d="M10 11v6M14 11v6"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ══════════════════════════════════════════════════════
+  // ACCIONES — SESIONES
+  // ══════════════════════════════════════════════════════
+
+  function confirmRevokeSession(sessionId, name) {
+    showModal(
+      'Cerrar sesión',
+      `¿Cerrar la sesión en "${name}"? Ese dispositivo tendrá que iniciar sesión de nuevo.`,
+      () => revokeSession(sessionId)
+    );
+  }
+
+  async function revokeSession(sessionId) {
+    try {
+      const res = await fetch(`/auth/sessions/${sessionId}`, {
+        method: 'DELETE', headers: authHeaders
+      });
+      if (res.ok) {
+        showToast('Sesión cerrada', 'success');
+        await init();
+      } else {
+        showToast('Error al cerrar sesión', 'error');
+      }
+    } catch { showToast('Error de conexión', 'error'); }
+  }
+
+  function confirmRevokeAll() {
+    showModal(
+      'Cerrar todas las sesiones',
+      'Se cerrará tu sesión en todos los dispositivos. Recibirás un email de confirmación. Tendrás que iniciar sesión de nuevo.',
+      revokeAllSessions
+    );
+  }
+
+  async function revokeAllSessions() {
+    try {
+      const res = await fetch('/auth/sessions', {
+        method: 'DELETE', headers: authHeaders
+      });
+      if (res.ok) {
+        showToast('Todas las sesiones cerradas', 'success');
+        localStorage.removeItem('aureon_token');
+        localStorage.removeItem('aureon_refresh');
+        setTimeout(() => { window.location.href = '/auth/login'; }, 1500);
+      } else {
+        showToast('Error al cerrar sesiones', 'error');
+      }
+    } catch { showToast('Error de conexión', 'error'); }
+  }
+
+  // ══════════════════════════════════════════════════════
+  // ACCIONES — DISPOSITIVOS
+  // ══════════════════════════════════════════════════════
+
+  async function trustDevice(deviceId, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try {
+      const res = await fetch(`/auth/devices/${deviceId}/trust`, {
+        method: 'PATCH', headers: authHeaders
+      });
+      if (res.ok) {
+        showToast('Dispositivo marcado como confiable', 'success');
+        await init();
+      } else {
+        showToast('Error al actualizar dispositivo', 'error');
+        btn.disabled = false;
+      }
+    } catch {
+      showToast('Error de conexión', 'error');
+      btn.disabled = false;
+    }
+  }
+
+  function confirmDeleteDevice(deviceId, name) {
+    showModal(
+      'Eliminar dispositivo',
+      `¿Eliminar "${name || 'este dispositivo'}"? Se cerrarán todas sus sesiones activas.`,
+      () => deleteDevice(deviceId)
+    );
+  }
+
+  async function deleteDevice(deviceId) {
+    try {
+      const res = await fetch(`/auth/devices/${deviceId}`, {
+        method: 'DELETE', headers: authHeaders
+      });
+      if (res.ok) {
+        showToast('Dispositivo eliminado', 'success');
+        await init();
+      } else {
+        showToast('Error al eliminar dispositivo', 'error');
+      }
+    } catch { showToast('Error de conexión', 'error'); }
+  }
+
+  // ══════════════════════════════════════════════════════
+  // MODAL
+  // ══════════════════════════════════════════════════════
+
+  function showModal(title, body, onConfirm) {
+    document.getElementById('modal-title').textContent   = title;
+    document.getElementById('modal-body').textContent    = body;
+    document.getElementById('overlay').classList.add('show');
+    pendingAction = onConfirm;
+  }
+
+  function closeModal() {
+    document.getElementById('overlay').classList.remove('show');
+    pendingAction = null;
+  }
+
+  function modalConfirmAction() {
+    closeModal();
+    if (pendingAction) pendingAction();
+  }
+
+  document.getElementById('overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('overlay')) closeModal();
+  });
+
+  // ══════════════════════════════════════════════════════
+  // TOAST
+  // ══════════════════════════════════════════════════════
+
+  let toastTimer = null;
+  function showToast(msg, type = '') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className   = 'toast show ' + type;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, 3000);
+  }
+
+  // ══════════════════════════════════════════════════════
+  // HELPERS
+  // ══════════════════════════════════════════════════════
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function timeAgo(iso) {
+    const diff = (Date.now() - new Date(iso)) / 1000;
+    if (diff < 60)     return 'hace un momento';
+    if (diff < 3600)   return `hace ${Math.floor(diff/60)} min`;
+    if (diff < 86400)  return `hace ${Math.floor(diff/3600)} h`;
+    if (diff < 604800) return `hace ${Math.floor(diff/86400)} días`;
+    return new Date(iso).toLocaleDateString('es-MX', { day:'numeric', month:'short' });
+  }
+
+  function deviceIcon(os) {
+    const isPhone   = /android|ios|iphone|ipad/i.test(os || '');
+    const isMac     = /mac/i.test(os || '');
+    if (isPhone) return `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="5" y="2" width="14" height="20" rx="3"/>
+        <circle cx="12" cy="18" r="1"/>
+      </svg>`;
+    return `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="2" y="4" width="20" height="14" rx="2"/>
+        <path d="M8 20h8M12 18v2"/>
+      </svg>`;
+  }
+
+  init();
+</script>
+</body>
+</html>

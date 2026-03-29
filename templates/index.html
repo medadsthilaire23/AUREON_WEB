@@ -1,6 +1,136 @@
 {% extends "base.html" %}
 {% block title %}AUREON — Plataforma{% endblock %}
 {% block content %}
+
+<style>
+  /* ── Nav fija de auth ─────────────────────────────── */
+  .nav-auth {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 40px;
+    background: rgba(15,23,42,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+  }
+  .nav-brand img { width: 28px; }
+  .nav-brand span {
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: 3px;
+    color: #f1f5f9;
+  }
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .btn-nav-login {
+    padding: 7px 16px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    color: #f1f5f9;
+    font-size: 13px;
+    text-decoration: none;
+    transition: .2s;
+  }
+  .btn-nav-login:hover { background: rgba(255,255,255,0.08); }
+  .btn-nav-register {
+    padding: 7px 16px;
+    background: #1f75fe;
+    border-radius: 6px;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: .2s;
+  }
+  .btn-nav-register:hover { background: #155dc3; }
+  .nav-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #94a3b8;
+    text-decoration: none;
+  }
+  .nav-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1f75fe, #00c8ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 13px;
+    color: white;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .nav-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .btn-nav-logout {
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid rgba(248,113,113,0.3);
+    border-radius: 6px;
+    color: #f87171;
+    font-size: 12px;
+    cursor: pointer;
+    transition: .2s;
+  }
+  .btn-nav-logout:hover { background: rgba(248,113,113,0.1); }
+
+  /* Empujar el hero hacia abajo por la nav fija */
+  .hero { padding-top: 140px !important; }
+
+  /* ── Estado de acceso en cards ────────────────────── */
+  .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .card-status {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+  }
+  .status-locked {
+    background: rgba(251,191,36,0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(251,191,36,0.25);
+  }
+  .status-ok {
+    background: rgba(74,222,128,0.12);
+    color: #4ade80;
+    border: 1px solid rgba(74,222,128,0.25);
+  }
+</style>
+
+<!-- Nav fija -->
+<nav class="nav-auth">
+  <a class="nav-brand" href="/">
+    <img src="{{ url_for('static', filename='AureonWeb_150px.png') }}" alt="AUREON">
+    <span>AUREON</span>
+  </a>
+  <div class="nav-right" id="nav-right">
+    <!-- JS lo rellena según estado de sesión -->
+  </div>
+</nav>
+
+<!-- Hero — idéntico al original, solo se agrega padding-top por la nav -->
 <header class="hero">
     <img src="{{ url_for('static', filename='AureonWeb_150px.png') }}"
          alt="AUREON Logo" class="logo">
@@ -8,29 +138,191 @@
     <p>Automatización y APIs para potenciar tu negocio digital.</p>
     <a href="/hud" class="primary-btn">Explorar herramientas</a>
 </header>
+
+<!-- Anuncios — idéntico al original -->
 <section class="announcements">
     <h2>Actualizaciones</h2>
     <div id="announcements-container"></div>
 </section>
+
+<!-- Aplicaciones — mismo contenido, se agrega card-footer con estado de acceso -->
 <section class="apps-preview">
     <h2>Aplicaciones</h2>
+
     <div class="card">
         <h3>⚡ Lifebound</h3>
         <p>Genera tu álbum de evidencia USCIS en minutos.</p>
-        <a href="/lifebound" class="secondary-btn">Abrir →</a>
+        <div class="card-footer">
+            <span class="card-status status-locked" id="status-lifebound">Requiere cuenta</span>
+            <a href="#" class="secondary-btn"
+               onclick="openProduct(event,'lifebound','/lifebound')">Abrir →</a>
+        </div>
     </div>
+
     <div class="card">
         <h3>APIs</h3>
         <p>Conecta y automatiza plataformas como Amazon y AliExpress.</p>
-        <a href="/hud" class="secondary-btn">Ver APIs</a>
+        <div class="card-footer">
+            <span class="card-status status-locked" id="status-apis">Requiere cuenta</span>
+            <a href="#" class="secondary-btn"
+               onclick="openProduct(event,'apis','/hud')">Ver APIs</a>
+        </div>
     </div>
+
     <div class="card">
         <h3>Scripts de Automatización</h3>
         <p>Automatiza procesos repetitivos y optimiza tu flujo de trabajo.</p>
-        <a href="/hud" class="secondary-btn">Ver Scripts</a>
+        <div class="card-footer">
+            <span class="card-status status-locked" id="status-scripts">Requiere cuenta</span>
+            <a href="#" class="secondary-btn"
+               onclick="openProduct(event,'scripts','/hud')">Ver Scripts</a>
+        </div>
     </div>
+
 </section>
+
+<!-- Footer — idéntico al original -->
 <footer>
     <p>© 2026 AUREON — Todos los derechos reservados</p>
 </footer>
+
+<script>
+  // ── Estado de auth ─────────────────────────────────────
+  async function initAuth() {
+    const token = localStorage.getItem('aureon_token');
+
+    if (!token) { renderGuest(); return; }
+
+    try {
+      const res = await fetch('/auth/me', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+
+      if (res.ok) {
+        renderUser(await res.json());
+      } else {
+        // Intentar refresh
+        if (await tryRefresh()) {
+          const res2 = await fetch('/auth/me', {
+            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('aureon_token') }
+          });
+          if (res2.ok) { renderUser(await res2.json()); return; }
+        }
+        clearTokens(); renderGuest();
+      }
+    } catch { renderGuest(); }
+  }
+
+  function renderGuest() {
+    document.getElementById('nav-right').innerHTML = `
+      <a href="/auth/login"    class="btn-nav-login">Iniciar sesión</a>
+      <a href="/auth/register" class="btn-nav-register">Crear cuenta</a>
+    `;
+  }
+
+  function renderUser(user) {
+    const initial = (user.name || '?').charAt(0).toUpperCase();
+    const avatar  = user.avatar_url
+      ? `<img src="${user.avatar_url}" alt="${user.name}">`
+      : initial;
+
+    document.getElementById('nav-right').innerHTML = `
+      <a href="/auth/devices-page" class="nav-user">
+        <div class="nav-avatar">${avatar}</div>
+        <span>${user.name.split(' ')[0]}</span>
+      </a>
+      <button class="btn-nav-logout" onclick="logout()">Salir</button>
+    `;
+
+    // Actualizar estado de acceso en cards
+    const products = (user.products || []).map(p => p.product_id);
+    updateStatus('lifebound', products.includes('lifebound'));
+    updateStatus('apis',    true);   // disponible para todos
+    updateStatus('scripts', true);
+  }
+
+  function updateStatus(id, hasAccess) {
+    const el = document.getElementById('status-' + id);
+    if (!el) return;
+    if (hasAccess) {
+      el.textContent = '✓ Acceso activo';
+      el.className   = 'card-status status-ok';
+    } else {
+      el.textContent = 'Activar acceso';
+      el.className   = 'card-status status-locked';
+    }
+  }
+
+  // ── Abrir producto ─────────────────────────────────────
+  function openProduct(e, productId, url) {
+    e.preventDefault();
+    const token = localStorage.getItem('aureon_token');
+
+    if (!token) {
+      // Sin sesión → login → consent → producto
+      window.location.href =
+        `/auth/login?redirect=${encodeURIComponent(
+          `/auth/consent-page?product_id=${productId}&redirect=${encodeURIComponent(url)}`
+        )}`;
+      return;
+    }
+
+    // Con sesión → consent → producto
+    window.location.href =
+      `/auth/consent-page?product_id=${productId}&redirect=${encodeURIComponent(url)}`;
+  }
+
+  // ── Logout ─────────────────────────────────────────────
+  async function logout() {
+    const token = localStorage.getItem('aureon_token');
+    if (token) {
+      await fetch('/auth/logout', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).catch(() => {});
+    }
+    clearTokens();
+    window.location.reload();
+  }
+
+  // ── Refresh token ──────────────────────────────────────
+  async function tryRefresh() {
+    const refresh = localStorage.getItem('aureon_refresh');
+    if (!refresh) return false;
+    try {
+      const res = await fetch('/auth/refresh', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ refresh_token: refresh }),
+      });
+      if (res.ok) {
+        localStorage.setItem('aureon_token', (await res.json()).access_token);
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  function clearTokens() {
+    localStorage.removeItem('aureon_token');
+    localStorage.removeItem('aureon_refresh');
+  }
+
+  // ── Anuncios ───────────────────────────────────────────
+  fetch('/api/announcements')
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('announcements-container').innerHTML =
+        data.map(a => `
+          <div class="card" style="width:220px">
+            <h3>${a.title}</h3>
+            <p>${a.description}</p>
+            <a href="${a.link}" class="secondary-btn" style="margin-top:10px">Ver →</a>
+          </div>
+        `).join('');
+    }).catch(() => {});
+
+  initAuth();
+</script>
+
 {% endblock %}

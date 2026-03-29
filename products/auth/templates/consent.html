@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acceso — AUREON</title>
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #0f172a;
+    --card:    rgba(255,255,255,0.06);
+    --border:  rgba(255,255,255,0.10);
+    --blue:    #1f75fe;
+    --blue-h:  #155dc3;
+    --text:    #f1f5f9;
+    --muted:   #94a3b8;
+    --green:   #4ade80;
+    --error:   #f87171;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 0;
+    color: var(--text);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    top: -200px; left: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(31,117,254,0.2), transparent 70%);
+    z-index: 0;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    bottom: -200px; right: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(0,200,255,0.15), transparent 70%);
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 400px;
+    padding: 16px;
+    animation: fadeUp .5s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Brand del producto solicitante */
+  .product-brand {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .product-brand img {
+    width: 48px;
+    margin-bottom: 8px;
+  }
+  .product-brand .product-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .product-brand .asking {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Flecha de conexión entre Aureon y producto */
+  .connection {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .conn-logo {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+  .conn-arrow {
+    color: var(--muted);
+    font-size: 18px;
+  }
+
+  /* Card principal */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+  }
+
+  /* Avatar del usuario */
+  .user-block {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 24px;
+  }
+  .avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--blue), #00c8ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    color: white;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .user-info .name {
+    font-weight: 500;
+    font-size: 15px;
+    color: var(--text);
+  }
+  .user-info .email {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .verified-badge {
+    margin-left: auto;
+    background: rgba(74,222,128,.12);
+    border: 1px solid rgba(74,222,128,.25);
+    color: var(--green);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+
+  /* Título y permisos */
+  .consent-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text);
+    text-align: center;
+  }
+  .consent-sub {
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+
+  /* Lista de permisos */
+  .perms {
+    list-style: none;
+    margin-bottom: 24px;
+  }
+  .perms li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--muted);
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .perms li:last-child { border-bottom: none; }
+  .perm-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--green);
+  }
+
+  /* Botones */
+  .btn {
+    width: 100%;
+    padding: 13px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: .2s ease;
+    font-family: 'Inter', sans-serif;
+  }
+  .btn-primary {
+    background: var(--blue);
+    color: white;
+    margin-bottom: 10px;
+  }
+  .btn-primary:hover { background: var(--blue-h); transform: translateY(-1px); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover {
+    background: rgba(255,255,255,0.05);
+    color: var(--text);
+  }
+
+  /* Links de fondo */
+  .bottom-links {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .bottom-links a {
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .bottom-links a:hover { text-decoration: underline; }
+
+  /* Estado: no autenticado */
+  .not-auth {
+    text-align: center;
+    padding: 8px 0 16px;
+  }
+  .not-auth p {
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Loading inicial */
+  #loading {
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    padding: 40px 0;
+  }
+  #content { display: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- Brand Aureon arriba -->
+  <div class="product-brand">
+    <img src="/static/AureonWeb_150px.png" alt="Aureon">
+    <div class="product-name">AUREON</div>
+  </div>
+
+  <!-- Conexión Aureon ↔ Producto -->
+  <div class="connection">
+    <div class="conn-logo">A</div>
+    <div class="conn-arrow">→</div>
+    <div class="conn-logo" id="product-icon">?</div>
+  </div>
+
+  <div class="card">
+    <div id="loading">
+      <span class="spinner"></span> Verificando sesión...
+    </div>
+
+    <div id="content">
+
+      <!-- Estado: autenticado → mostrar consent -->
+      <div id="authenticated-view" style="display:none">
+        <div class="consent-title" id="consent-title">Continuar como</div>
+        <div class="consent-sub" id="consent-sub"></div>
+
+        <!-- Bloque usuario -->
+        <div class="user-block">
+          <div class="avatar" id="user-avatar"></div>
+          <div class="user-info">
+            <div class="name"  id="user-name">—</div>
+            <div class="email" id="user-email">—</div>
+          </div>
+          <div class="verified-badge">✓ Aureon</div>
+        </div>
+
+        <!-- Permisos que se otorgan -->
+        <ul class="perms">
+          <li>
+            <svg class="perm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 7L9 18l-5-5"/>
+            </svg>
+            Acceso a tu nombre y email de Aureon
+          </li>
+          <li>
+            <svg class="perm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 7L9 18l-5-5"/>
+            </svg>
+            Sesión unificada — un solo login para todos los productos
+          </li>
+          <li>
+            <svg class="perm-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 7L9 18l-5-5"/>
+            </svg>
+            Puedes revocar el acceso en cualquier momento
+          </li>
+        </ul>
+
+        <button class="btn btn-primary" id="btn-continue" onclick="grantAccess()">
+          Continuar
+        </button>
+        <button class="btn btn-ghost" onclick="useOtherAccount()">
+          Usar otra cuenta
+        </button>
+      </div>
+
+      <!-- Estado: no autenticado → redirigir a login -->
+      <div id="unauthenticated-view" style="display:none">
+        <div class="not-auth">
+          <div class="consent-title">Iniciar sesión</div>
+          <p id="product-msg">Para acceder necesitas una cuenta Aureon.</p>
+          <button class="btn btn-primary" onclick="goToLogin()">
+            Iniciar sesión en Aureon
+          </button>
+          <button class="btn btn-ghost" style="margin-top:10px" onclick="goToRegister()">
+            Crear cuenta nueva
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="bottom-links">
+    <a href="/">Volver a Aureon</a>
+    &nbsp;·&nbsp;
+    <a href="/auth/devices">Mis dispositivos</a>
+  </div>
+</div>
+
+<script>
+  const params     = new URLSearchParams(location.search);
+  const productId  = params.get('product_id') || '';
+  const redirectTo = params.get('redirect')    || '/';
+
+  // Nombres amigables de productos
+  const PRODUCT_NAMES = {
+    lifebound:   'Lifebound',
+    producto_b:  'Producto B',
+  };
+
+  const productName = PRODUCT_NAMES[productId] || productId || 'este producto';
+
+  // Inicializar icono del producto
+  document.getElementById('product-icon').textContent =
+    productName.charAt(0).toUpperCase();
+
+  async function init() {
+    const token = localStorage.getItem('aureon_token');
+
+    if (!token) {
+      showUnauthenticated();
+      return;
+    }
+
+    // Verificar token con el servidor
+    try {
+      const res = await fetch('/auth/consent' +
+        `?product_id=${encodeURIComponent(productId)}` +
+        `&redirect=${encodeURIComponent(redirectTo)}`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const data = await res.json();
+
+      if (data.authenticated && data.user) {
+        showAuthenticated(data.user);
+      } else {
+        showUnauthenticated();
+      }
+    } catch (e) {
+      showUnauthenticated();
+    }
+  }
+
+  function showAuthenticated(user) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+    document.getElementById('authenticated-view').style.display = 'block';
+
+    // Título dinámico
+    document.getElementById('consent-title').textContent =
+      `Continuar como`;
+    document.getElementById('consent-sub').textContent =
+      `${productName} quiere usar tu cuenta Aureon para darte acceso.`;
+
+    // Datos del usuario
+    document.getElementById('user-name').textContent  = user.name;
+    document.getElementById('user-email').textContent = user.email;
+
+    // Avatar — inicial o foto
+    const avatarEl = document.getElementById('user-avatar');
+    if (user.avatar_url) {
+      avatarEl.innerHTML = `<img src="${user.avatar_url}" alt="${user.name}">`;
+    } else {
+      avatarEl.textContent = user.name.charAt(0).toUpperCase();
+    }
+
+    // Actualizar botón con nombre
+    document.getElementById('btn-continue').textContent =
+      `Continuar como ${user.name.split(' ')[0]}`;
+  }
+
+  function showUnauthenticated() {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+    document.getElementById('unauthenticated-view').style.display = 'block';
+    document.getElementById('product-msg').textContent =
+      `Para acceder a ${productName} necesitas una cuenta Aureon.`;
+  }
+
+  async function grantAccess() {
+    const token = localStorage.getItem('aureon_token');
+    const btn   = document.getElementById('btn-continue');
+
+    btn.disabled  = true;
+    btn.innerHTML = '<span class="spinner"></span> Accediendo...';
+
+    try {
+      // Registrar acceso al producto
+      await fetch('/auth/grant-product', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer ' + token,
+        },
+        body: JSON.stringify({ product_id: productId }),
+      });
+
+      // Redirigir al origen con el token en header
+      // El producto lee el token de localStorage automáticamente
+      window.location.href = redirectTo;
+
+    } catch (e) {
+      btn.disabled  = false;
+      btn.textContent = 'Continuar';
+    }
+  }
+
+  function useOtherAccount() {
+    localStorage.removeItem('aureon_token');
+    localStorage.removeItem('aureon_refresh');
+    goToLogin();
+  }
+
+  function goToLogin() {
+    const url = `/auth/login?redirect=${encodeURIComponent(
+      `/auth/consent?product_id=${productId}&redirect=${redirectTo}`
+    )}`;
+    window.location.href = url;
+  }
+
+  function goToRegister() {
+    const url = `/auth/register?redirect=${encodeURIComponent(
+      `/auth/consent?product_id=${productId}&redirect=${redirectTo}`
+    )}`;
+    window.location.href = url;
+  }
+
+  init();
+</script>
+</body>
+</html>

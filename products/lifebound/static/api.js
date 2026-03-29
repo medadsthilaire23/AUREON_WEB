@@ -5,9 +5,9 @@
 //   - Centralizar las URLs de la API en un solo lugar
 //   - Manejar errores HTTP de forma uniforme
 //   - Exponer funciones con nombres de negocio, no de HTTP
+//   - Inyectar el token Aureon en todos los requests
 //
 // NINGÚN otro módulo llama fetch() directamente.
-// Si cambia una URL o el formato de respuesta, solo se toca aquí.
 // ═══════════════════════════════════════════════════════════════
 
 // ───────────────────────────────────────────────────────────────
@@ -17,18 +17,32 @@
 const BASE = '/lifebound/api';
 
 /**
+ * Devuelve el header Authorization con el token Aureon.
+ * Si no hay token, devuelve objeto vacío (el backend devolverá 401).
+ */
+function _authHeader() {
+  const token = localStorage.getItem('aureon_token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+/**
  * fetch con manejo de errores HTTP centralizado.
- * Lanza un Error con el mensaje del servidor si el status no es 2xx.
+ * Inyecta automáticamente el token Aureon en cada request.
  *
  * @param {string} url
  * @param {RequestInit} [options={}]
  * @returns {Promise<any>} — JSON parseado
  */
 async function _fetch(url, options = {}) {
+  // Merge del header de auth con los headers existentes
+  options.headers = {
+    ..._authHeader(),
+    ...(options.headers || {}),
+  };
+
   const res = await fetch(url, options);
 
   if (!res.ok) {
-    // Intentar extraer el mensaje de error del servidor
     let message = `Error ${res.status}`;
     try {
       const body = await res.json();
@@ -45,6 +59,12 @@ async function _fetch(url, options = {}) {
  * Usado para la descarga del PDF (necesitamos el Blob, no JSON).
  */
 async function _fetchRaw(url, options = {}) {
+  // Merge del header de auth con los headers existentes
+  options.headers = {
+    ..._authHeader(),
+    ...(options.headers || {}),
+  };
+
   const res = await fetch(url, options);
 
   if (!res.ok) {
@@ -166,17 +186,16 @@ export async function generateAlbumPDF(compressedPhotos, payload) {
     fd.append('photos', blob, `${pid}.jpg`);
   });
 
-  // session_id va como campo separado del FormData (el backend lo lee con request.form.get)
-  fd.append('session_id', payload.session_id ?? '');
   // El resto del payload va como JSON
   const payloadWithoutSid = { ...payload };
   delete payloadWithoutSid.session_id;
   fd.append('payload', JSON.stringify(payloadWithoutSid));
 
+  // Para FormData NO poner Content-Type — el browser lo pone solo con el boundary
+  // pero SÍ inyectar el token de auth
   const res = await _fetchRaw(`${BASE}/generate`, {
     method: 'POST',
     body:   fd,
-    // NO poner Content-Type — el browser lo pone solo con el boundary correcto
   });
 
   return res.blob();

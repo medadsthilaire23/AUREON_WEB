@@ -14,6 +14,11 @@ instancias propias:
 
 Usar instancias separadas hace que cada módulo tenga su propio
 diccionario en memoria y las sesiones nunca se comparten.
+
+Cambios vs versión anterior
+----------------------------
+- create() acepta user_id opcional para aislar sesiones por usuario
+- belongs_to(sid, user_id) verifica ownership antes de operar
 """
 import threading
 import time
@@ -28,12 +33,13 @@ class SessionStore:
         self._sessions = {}
         self._lock     = threading.Lock()
 
-    def create(self, sid: str):
+    def create(self, sid: str, user_id: str = None):
         with self._lock:
             self._sessions[sid] = {
                 "created_at": time.time(),
                 "photos":     {},
                 "status":     "waiting",
+                "user_id":    user_id,   # ← nuevo
             }
 
     def exists(self, sid: str) -> bool:
@@ -45,6 +51,20 @@ class SessionStore:
                 del self._sessions[sid]
                 return False
             return True
+
+    def belongs_to(self, sid: str, user_id: str) -> bool:
+        """
+        Verifica que la sesión pertenece al usuario.
+        Si la sesión no tiene user_id (legacy) siempre pasa — sin romper nada.
+        """
+        with self._lock:
+            s = self._sessions.get(sid)
+            if not s:
+                return False
+            stored = s.get("user_id")
+            if stored is None:   # sesión legacy sin auth
+                return True
+            return stored == user_id
 
     def set_photos(self, sid: str, photo_map: dict):
         with self._lock:

@@ -16,31 +16,32 @@ Pipeline completo de una sesión:
 Responsabilidades
 -----------------
 1. Validar session_id y que las fotos ya fueron recibidas.
-2. Mergear shared + own del payload en un dict unificado para las intro pages.
-3. Generar las 3 páginas introductorias (cover, letter, id).
-4. Generar cada página de evidencia del plan[].
+2. Verificar que la sesión pertenece al usuario autenticado.
+3. Mergear shared + own del payload en un dict unificado para las intro pages.
+4. Generar las 3 páginas introductorias (cover, letter, id).
+5. Generar cada página de evidencia del plan[].
    - Si una página falla → insertar página de error visual en su lugar.
-5. Fusionar todo en un único PDF y devolverlo como descarga.
-6. Eliminar la sesión del store al finalizar (liberar memoria).
+6. Fusionar todo en un único PDF y devolverlo como descarga.
+7. Eliminar la sesión del store al finalizar (liberar memoria).
 
 Payload esperado
 ----------------
 {
     "plan":               [...],
-    "shared":             {          ← antes: applicant_info
+    "shared":             {
         "field_office_name":    "...",
         "field_office_address": "...",
         "attention":            "...",
         "applicant_name":       "...",
         "spouse_name":          "...",
         "address":              "...",
-        "n400_receipt":         "...",
-        "i751_receipt":         "...",
+        "receipts_N":           { "N-400": "IOE..." },
+        "receipts_I":           { "I-751": "IOE..." },
         "interview_date":       "...",
         "interview_time":       "...",
         "applicant_number":     "..."
     },
-    "own":                {          ← antes: questionnaire_data
+    "own":                {
         "page_1_date":        "...",
         "page_1_description": "...",
         "include_tax_years":  "...",
@@ -52,13 +53,6 @@ Compatibilidad hacia atrás
 --------------------------
 Si el payload trae "applicant_info" en vez de "shared", se acepta igual.
 Si trae "questionnaire_data" en vez de "own", se acepta igual.
-Esto permite migración gradual del frontend sin romper nada.
-
-Errores del usuario vs errores del sistema
--------------------------------------------
-- Foto faltante o slot vacío   → fallo del usuario → página de error visual.
-- Template no encontrado        → fallo del usuario → página de error visual.
-- Error de merge/IO             → fallo del sistema → HTTP 500.
 """
 
 import json
@@ -66,11 +60,12 @@ import logging
 import time
 from io import BytesIO
 
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, jsonify, request, send_file, g
 
 from infrastructure.pdf.pdf_merger_service import PDFMergerService
 from modules.session_store import store
 from modules.template_manager import TemplateManager
+from shared.auth_middleware import require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -91,18 +86,11 @@ _INTRO_PAGES = ("cover_page", "cover_letter", "identification_page")
 def _resolve_shared(payload: dict) -> dict:
     """
     Extrae los datos compartidos del payload.
-
-    Acepta tanto el formato nuevo ("shared") como el legado ("applicant_info")
-    para permitir migración gradual del frontend.
-
-    El dict resultante es el que se pasa directamente a las intro pages
-    y se mezcla con "own" para las evidence pages.
+    Acepta tanto el formato nuevo ("shared") como el legado ("applicant_info").
     """
-    # Formato nuevo tiene prioridad
     if "shared" in payload:
         return payload["shared"]
 
-    # Compatibilidad hacia atrás con applicant_info
     ai = payload.get("applicant_info", {})
     return {
         "field_office_name":    ai.get("office",         "USCIS Field Office"),
@@ -111,8 +99,8 @@ def _resolve_shared(payload: dict) -> dict:
         "applicant_name":       ai.get("name",           ""),
         "spouse_name":          ai.get("spouse",         ""),
         "address":              ai.get("address",        ""),
-        "n400_receipt":         ai.get("receipt_n400",   "IOE0000000000"),
-        "i751_receipt":         ai.get("receipt_i751",   "IOE0000000000"),
+        "receipts_N":           {},
+        "receipts_I":           {},
         "interview_date":       ai.get("interview_date", ""),
         "interview_time":       ai.get("interview_time", ""),
         "applicant_number":     ai.get("a_number",       ""),
@@ -122,7 +110,6 @@ def _resolve_shared(payload: dict) -> dict:
 def _resolve_own(payload: dict) -> dict:
     """
     Extrae los datos propios del payload.
-
     Acepta tanto el formato nuevo ("own") como el legado ("questionnaire_data").
     """
     return payload.get("own") or payload.get("questionnaire_data", {})
@@ -131,15 +118,11 @@ def _resolve_own(payload: dict) -> dict:
 def _build_page_data(page: dict, shared: dict, own: dict, photo_map: dict) -> dict:
     """
     Construye el diccionario de datos para una página de evidencia.
-
     Merge: shared → own → campos de foto del slot.
-    own tiene prioridad sobre shared (permite override por página si se necesita).
-    Las fotos siempre ganan (son los BytesIO reales).
     """
     pn        = page["page"]
-    page_data = {**shared}  # base: datos compartidos
+    page_data = {**shared}
 
-    # Campos propios de esta página específica
     for field in ("date", "location", "description", "title"):
         value = own.get(f"page_{pn}_{field}")
         if value:
@@ -147,7 +130,6 @@ def _build_page_data(page: dict, shared: dict, own: dict, photo_map: dict) -> di
 
     page_data["background_color"] = page.get("color", "white")
 
-    # Fotos del slot
     for slot in page.get("slots", []):
         pid       = slot.get("photo_id", "")
         slot_num  = slot.get("slot", 1)
@@ -164,9 +146,7 @@ def _build_page_data(page: dict, shared: dict, own: dict, photo_map: dict) -> di
 
 
 def _generate_error_page(page_num: int, template_id: str, reason: str) -> bytes:
-    """
-    Genera una página PDF de error visual cuando una página de evidencia falla.
-    """
+    """Genera una página PDF de error visual cuando una página de evidencia falla."""
     error_data = {
         "page_number":  page_num,
         "template_id":  template_id,
@@ -197,26 +177,24 @@ def _generate_error_page(page_num: int, template_id: str, reason: str) -> bytes:
 # ═════════════════════════════════════════════════════════════════════════
 
 @generate_bp.route("/api/generate", methods=["POST"])
+@require_auth
 def generate():
     """
     Genera y devuelve el PDF final del álbum de evidencia USCIS.
 
+    Requiere autenticación Aureon via Authorization: Bearer <token>
+
     Multipart form-data esperado
     ----------------------------
     session_id : str
-        ID de sesión activa con fotos ya almacenadas.
-    payload : JSON str
-        {
-            "plan":    [...],
-            "shared":  {...},   ← datos del caso (se piden una sola vez al usuario)
-            "own":     {...}    ← datos propios de cada página
-        }
+    payload    : JSON str
 
     Respuestas HTTP
     ---------------
-    200 — PDF generado (application/pdf, attachment)
-    400 — session_id inválido, expirado o fotos no recibidas aún
-    500 — Error interno al mergear o al generar páginas introductorias
+    200 — PDF generado
+    400 — session_id inválido o fotos no recibidas
+    403 — sesión no pertenece al usuario autenticado
+    500 — Error interno
     """
     t_start = time.time()
 
@@ -224,6 +202,10 @@ def generate():
     sid = request.form.get("session_id")
     if not sid or not store.exists(sid):
         return jsonify({"error": "Invalid or expired session_id"}), 400
+
+    # Verificar que la sesión pertenece al usuario autenticado
+    if not store.belongs_to(sid, g.user_id):
+        return jsonify({"error": "Unauthorized"}), 403
 
     session_status = store.get_status(sid)
     if session_status.get("status") != "photos_ready":
@@ -248,7 +230,7 @@ def generate():
 
     applicant_name = shared.get("applicant_name") or "Unknown"
 
-    # ── 3. Páginas introductorias — reciben shared directamente ───────────
+    # ── 3. Páginas introductorias ─────────────────────────────────────────
     buffers = []
     try:
         for doc_id in _INTRO_PAGES:
@@ -291,8 +273,8 @@ def generate():
 
     elapsed = round(time.time() - t_start, 2)
     logger.info(
-        "PDF generado: solicitante='%s' páginas_ok=%d páginas_error=%d tiempo=%ss",
-        applicant_name, pages_ok, pages_error, elapsed
+        "PDF generado: user=%s solicitante='%s' páginas_ok=%d páginas_error=%d tiempo=%ss",
+        g.user_id, applicant_name, pages_ok, pages_error, elapsed
     )
 
     filename = f"USCIS_Album_{applicant_name.replace(' ', '_')}.pdf"
