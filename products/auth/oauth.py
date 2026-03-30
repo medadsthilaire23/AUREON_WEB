@@ -224,7 +224,7 @@ def google_login():
     session["oauth_product_id"] = request.args.get("product_id", "")
     session["oauth_redirect"]   = request.args.get("redirect",    "/")
 
-    callback_url = url_for("oauth.google_callback", _external=True)
+    callback_url = f"{APP_URL}/auth/oauth/google/callback"
     return oauth.google.authorize_redirect(callback_url)
 
 
@@ -269,7 +269,7 @@ def github_login():
     session["oauth_product_id"] = request.args.get("product_id", "")
     session["oauth_redirect"]   = request.args.get("redirect",    "/")
 
-    callback_url = url_for("oauth.github_callback", _external=True)
+    callback_url = f"{APP_URL}/auth/oauth/github/callback"
     return oauth.github.authorize_redirect(callback_url)
 
 
