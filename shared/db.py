@@ -32,10 +32,11 @@ def init_db(app):
     # Engine options solo para PostgreSQL (SQLite no las soporta)
     if not database_url.startswith("sqlite"):
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-            "pool_pre_ping": True,
-            "pool_recycle":  300,
-            "pool_size":     5,
-            "max_overflow":  10,
+            "pool_pre_ping":  True,
+            "pool_recycle":   300,
+            "pool_size":      5,
+            "max_overflow":   10,
+            "connect_args":   {"sslmode": "require"},  # Requerido para NeonDB
         }
 
     db.init_app(app)
