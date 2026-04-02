@@ -9,7 +9,8 @@
 # FASE 2 — Wiring:
 #     3. OAuth
 #     4. Conductor + wire_auth()  ← subsistema de control integrado
-#     5. db.create_all()
+#     5. Tracer  ← wire del tracer (before/after_request + loop handler)
+#     6. db.create_all()
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
@@ -39,8 +40,25 @@ def create_app():
     from flask import Flask, render_template, jsonify
 
     app = Flask(__name__)
+
+    # ── Seguridad de sesión ────────────────────────────────
+    # SECRET_KEY debe estar definida en Render → Environment Variables.
+    # Sin ella, las cookies OAuth se invalidan entre workers y deploys.
+    # Generar con: python -c "import secrets; print(secrets.token_hex(32))"
     app.secret_key = os.environ.get("SECRET_KEY", "dev_secret_cambia_esto")
-    app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+
+    # Configuración de cookie robusta para OAuth en producción.
+    # SameSite=Lax permite que la cookie regrese tras el redirect de Google/GitHub.
+    # Secure=True sólo en producción (HTTPS); False en dev (HTTP local).
+    # Sin SESSION_COOKIE_DOMAIN → Flask lo infiere del request; evita
+    # problemas en subdominios de Render.
+    _is_production = os.environ.get("FLASK_ENV") == "production"
+    app.config["SESSION_COOKIE_SAMESITE"]    = "Lax"
+    app.config["SESSION_COOKIE_SECURE"]      = _is_production  # False en dev
+    app.config["SESSION_COOKIE_HTTPONLY"]    = True
+    app.config["SESSION_COOKIE_NAME"]        = "aureon_session"
+    app.config["PERMANENT_SESSION_LIFETIME"] = 3600            # 1 hora
+    app.config["MAX_CONTENT_LENGTH"]         = 100 * 1024 * 1024
 
     # ══════════════════════════════════════════════════════
     # FASE 1 — BOOTSTRAP
@@ -97,7 +115,20 @@ def create_app():
         log.error("  [✗] Wiring failed: %s", e)
         raise  # Crítico — sin wiring no hay auth
 
-    # 2c. Crear / verificar tablas
+    # 2c. Tracer — wire completo (before/after_request + loop error handler)
+    try:
+        from shared.control.tracer import Tracer, register_tracer, TraceLoopError
+        tracer = Tracer(conductor)
+        register_tracer(tracer)
+        app.before_request(tracer.begin)
+        app.after_request(tracer.finish)
+        app.register_error_handler(TraceLoopError, tracer.loop_error_handler)
+        log.info("  [✓] Tracer wired (before_request / after_request / loop_error_handler)")
+    except Exception as e:
+        log.error("  [✗] Tracer wiring failed: %s", e)
+        raise  # Crítico — sin tracer no hay trazabilidad ni detección de loops
+
+    # 2d. Crear / verificar tablas
     try:
         with app.app_context():
             from shared.db import db
@@ -107,8 +138,8 @@ def create_app():
         log.error("  [✗] db.create_all failed: %s", e)
         raise
 
-    # 2d. Rutas registradas (solo en desarrollo)
-    if os.environ.get("FLASK_ENV") != "production":
+    # 2e. Rutas registradas (solo en desarrollo)
+    if not _is_production:
         with app.app_context():
             for rule in app.url_map.iter_rules():
                 if any(x in rule.rule for x in ["oauth", "passkey", "auth"]):
@@ -153,10 +184,14 @@ def create_app():
     @app.route("/health")
     def health():
         from shared.control.conductor import conductor
-        return jsonify({
+        import shared.control.tracer as _tracer_mod
+        payload = {
             "status":    "ok",
             "conductor": conductor.all_snapshots(),
-        }), 200
+        }
+        if _tracer_mod._tracer is not None:
+            payload["tracer"] = _tracer_mod._tracer.snapshot()
+        return jsonify(payload), 200
 
     return app
 

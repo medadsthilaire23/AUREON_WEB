@@ -8,8 +8,10 @@ services:
 
     buildCommand: pip install -r requirements.txt
 
-    # 🔥 Factory pattern correcto
-    startCommand: gunicorn "app:create_app()" --workers 1 --timeout 180
+    # Aplica migraciones pendientes antes de arrancar.
+    # Si alembic upgrade falla, el deploy se detiene — protege contra
+    # arrancar con un schema desactualizado.
+    startCommand: alembic upgrade head && gunicorn app:app --workers 1 --timeout 180
 
     plan: free
     autoDeploy: true
