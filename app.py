@@ -128,7 +128,22 @@ def create_app():
         log.error("  [✗] Tracer wiring failed: %s", e)
         raise  # Crítico — sin tracer no hay trazabilidad ni detección de loops
 
-    # 2d. Crear / verificar tablas
+    # 2d. Migraciones Alembic (corre al arrancar — aplica columnas pendientes)
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+        alembic_cfg = AlembicConfig(os.path.join(_BASE_DIR, "alembic.ini"))
+        alembic_cfg.set_main_option(
+            "script_location", os.path.join(_BASE_DIR, "migrations")
+        )
+        with app.app_context():
+            alembic_command.upgrade(alembic_cfg, "head")
+        log.info("  [✓] Alembic migrations applied (head)")
+    except Exception as e:
+        log.error("  [✗] Alembic migration failed: %s", e)
+        # No raise — db.create_all actúa como fallback
+
+    # 2e. Crear / verificar tablas nuevas sin migración aún
     try:
         with app.app_context():
             from shared.db import db
@@ -138,7 +153,7 @@ def create_app():
         log.error("  [✗] db.create_all failed: %s", e)
         raise
 
-    # 2e. Rutas registradas (solo en desarrollo)
+    # 2f. Rutas registradas (solo en desarrollo)
     if not _is_production:
         with app.app_context():
             for rule in app.url_map.iter_rules():
