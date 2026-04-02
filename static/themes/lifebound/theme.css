@@ -1,0 +1,37 @@
+/*
+  theme-lifebound.css
+  ===================
+  Tema visual del panel de cuenta para Lifebound.
+  Sobreescribe las variables CSS base de Aureon.
+  Solo afecta colores, fuentes y variables de animación.
+*/
+
+:root {
+  /* Colores Lifebound — verde olivo cálido + dorado */
+  --theme-bg:           #0e1a14;
+  --theme-surface:      #152019;
+  --theme-surface-2:    #1c2e22;
+  --theme-accent:       #4a9e6b;
+  --theme-accent-light: #6dba8a;
+  --theme-border:       rgba(74, 158, 107, 0.2);
+  --theme-text:         #e6f0e8;
+  --theme-muted:        #7aad8c;
+
+  /* Partículas — pétalos rosados/blancos */
+  --particle-color:     rgba(255, 192, 180, 0.75);
+  --particle-size:      8px;
+  --particle-speed:     6s;
+}
+
+/* Acento especial en el badge de rol */
+.user-role {
+  background: rgba(74, 158, 107, 0.12);
+  border-color: rgba(74, 158, 107, 0.35);
+  color: var(--theme-accent-light);
+}
+
+/* Tab activo con color Lifebound */
+.nav-tab.active {
+  color: var(--theme-accent-light);
+  background: rgba(74, 158, 107, 0.1);
+}

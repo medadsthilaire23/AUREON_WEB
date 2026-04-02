@@ -1,60 +1,48 @@
 # ══════════════════════════════════════════════════════════
-# requirements.txt — AUREON
+# AUREON — Production Requirements
 # ══════════════════════════════════════════════════════════
 
-# ── Flask core (versiones existentes conservadas) ─────────
-blinker==1.9.0
-click==8.3.1
-colorama==0.4.6
+# ── Core ──────────────────────────────────────────────────
 Flask==3.1.2
-itsdangerous==2.2.0
-Jinja2==3.1.6
-MarkupSafe==3.0.3
 Werkzeug==3.1.5
+Jinja2==3.1.6
+itsdangerous==2.2.0
+blinker==1.9.0
 
-# ── HTTP / red ────────────────────────────────────────────
-certifi==2026.1.4
-charset-normalizer==3.4.4
-idna==3.11
-requests==2.32.5
-urllib3==2.2.3
-
-# ── PDF / imágenes (Lifebound) ────────────────────────────
-reportlab==4.2.2
-Pillow==10.4.0
-pypdf==4.3.1
-
-# ── Servidor WSGI ─────────────────────────────────────────
+# ── WSGI Server ───────────────────────────────────────────
 gunicorn==25.0.0
-packaging==26.0
 
-# ── Base de datos ─────────────────────────────────────────
+# ── Database ──────────────────────────────────────────────
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy==2.0.31
 psycopg2-binary==2.9.9
 
-# ── Migraciones ───────────────────────────────────────────
+# ── Migrations ────────────────────────────────────────────
 alembic==1.13.2
 Flask-Migrate==4.0.7
 
-# ── Auth — JWT + contraseñas ──────────────────────────────
+# ── HTTP / Networking ─────────────────────────────────────
+requests==2.32.5
+urllib3==2.2.3
+certifi==2026.1.4
+charset-normalizer==3.4.4
+idna==3.11
+
+# ── Auth ──────────────────────────────────────────────────
 PyJWT==2.9.0
 bcrypt==4.2.0
-
-# ── Auth — Passkeys WebAuthn ──────────────────────────────
-webauthn==2.1.0
-
-# ── Auth — OAuth Google / GitHub ─────────────────────────
 Authlib==1.3.1
-
-# ── Auth — Emails ─────────────────────────────────────────
-resend==2.4.0
-
-# ── Auth — Device parser ──────────────────────────────────
+webauthn==2.1.0
 user-agents==2.2.0
-
-# ── Auth — Rate limiting ──────────────────────────────────
 Flask-Limiter==3.8.0
 
-# ── Desarrollo local ──────────────────────────────────────
+# ── Email ─────────────────────────────────────────────────
+resend==2.4.0
+
+# ── Media / Documents ─────────────────────────────────────
+reportlab==4.2.2
+Pillow==10.4.0
+pypdf==4.3.1
+
+# ── Environment ───────────────────────────────────────────
 python-dotenv==1.0.1

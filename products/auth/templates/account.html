@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi Cuenta — Aureon</title>
+
+  <!-- Base Aureon -->
+  <link rel="stylesheet" href="/auth/static/aureon-base.css">
+
+  <!-- Tema del producto (inyectado dinámicamente) -->
+  {% if theme and theme != 'aureon' %}
+  <link rel="stylesheet" href="/static/themes/{{ theme }}/theme.css">
+  {% endif %}
+
+  <!-- Logo -->
+  <link rel="icon" href="/static/favicon.ico">
+</head>
+<body>
+
+  <!-- Canvas de partículas (llenado por particles.js del tema) -->
+  <canvas id="particle-canvas"></canvas>
+
+  <div class="account-wrap">
+
+    <!-- Header -->
+    <header class="account-header">
+      <div class="account-logo">
+        <img src="/static/AureonWeb_150px.png" alt="Aureon" class="logo-img">
+        <span class="logo-text">AUREON</span>
+      </div>
+      <nav class="account-nav">
+        <button class="nav-tab active" data-tab="overview">Resumen</button>
+        <button class="nav-tab" data-tab="activity">Actividad</button>
+        <button class="nav-tab" data-tab="profile">Perfil</button>
+        <button class="nav-tab" data-tab="sessions">Sesiones</button>
+        <button class="nav-tab" data-tab="products">Productos</button>
+      </nav>
+      <a href="/" class="back-link">← Volver</a>
+    </header>
+
+    <!-- Hero del usuario -->
+    <section class="account-hero">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <div class="user-info">
+        <h1 class="user-name" id="user-name">Cargando...</h1>
+        <p class="user-email" id="user-email"></p>
+      </div>
+      <span class="user-role" id="user-role">user</span>
+    </section>
+
+    <!-- Contenido por tab -->
+    <main class="account-main">
+
+      <!-- ── RESUMEN ── -->
+      <section class="tab-section active" id="tab-overview">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Sesiones activas</div>
+            <div class="stat-value" id="stat-sessions">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Productos</div>
+            <div class="stat-value" id="stat-products">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Eventos registrados</div>
+            <div class="stat-value" id="stat-activity">—</div>
+          </div>
+        </div>
+        <div class="panel-card">
+          <h2 class="card-title">Actividad reciente</h2>
+          <ul class="activity-list" id="overview-activity"></ul>
+        </div>
+      </section>
+
+      <!-- ── ACTIVIDAD ── -->
+      <section class="tab-section" id="tab-activity">
+        <div class="panel-card">
+          <h2 class="card-title">Historial completo</h2>
+          <ul class="activity-list" id="full-activity"></ul>
+          <button class="btn-ghost" id="load-more" style="display:none">Cargar más</button>
+        </div>
+      </section>
+
+      <!-- ── PERFIL ── -->
+      <section class="tab-section" id="tab-profile">
+        <div class="panel-card">
+          <h2 class="card-title">Información personal</h2>
+          <div class="form-field">
+            <label class="form-label">Nombre</label>
+            <input class="form-input" id="profile-name" type="text" placeholder="Tu nombre">
+          </div>
+          <div class="form-field">
+            <label class="form-label">Email</label>
+            <input class="form-input" id="profile-email" type="email" disabled>
+            <p class="form-hint">El email no se puede cambiar aquí.</p>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Rol</label>
+            <input class="form-input" id="profile-role" type="text" disabled>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Miembro desde</label>
+            <input class="form-input" id="profile-since" type="text" disabled>
+          </div>
+          <button class="btn-primary" id="save-profile">Guardar cambios</button>
+          <p class="save-msg" id="save-msg"></p>
+        </div>
+      </section>
+
+      <!-- ── SESIONES ── -->
+      <section class="tab-section" id="tab-sessions">
+        <div class="panel-card">
+          <h2 class="card-title">Dispositivos y sesiones</h2>
+          <ul class="session-list" id="session-list"></ul>
+        </div>
+      </section>
+
+      <!-- ── PRODUCTOS ── -->
+      <section class="tab-section" id="tab-products">
+        <div class="panel-card">
+          <h2 class="card-title">Acceso a productos</h2>
+          <ul class="product-list" id="product-list"></ul>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- JS base -->
+  <script src="/auth/static/account.js"></script>
+
+  <!-- Partículas del tema (inyectadas si hay tema) -->
+  {% if theme and theme != 'aureon' %}
+  <script src="/static/themes/{{ theme }}/particles.js"></script>
+  {% endif %}
+
+</body>
+</html>
