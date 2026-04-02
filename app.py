@@ -189,8 +189,8 @@ def create_app():
             "status":    "ok",
             "conductor": conductor.all_snapshots(),
         }
-        if _tracer_mod._tracer is not None:
-            payload["tracer"] = _tracer_mod._tracer.snapshot()
+        if _tracer_mod._tracer_instance is not None:
+            payload["tracer"] = _tracer_mod._tracer_instance.snapshot()
         return jsonify(payload), 200
 
     return app
