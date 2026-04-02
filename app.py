@@ -10,7 +10,8 @@
 #     3. OAuth
 #     4. Conductor + wire_auth()  ← subsistema de control integrado
 #     5. Tracer  ← wire del tracer (before/after_request + loop handler)
-#     6. db.create_all()
+#     6. Alembic migrations
+#     7. db.create_all()
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
@@ -34,6 +35,36 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("aureon")
+
+# ── Sentry — inicializar antes de crear la app ─────────────────────────────
+# Captura errores automáticamente en producción y los envía al dashboard.
+# SENTRY_DSN debe estar definida en Render → Environment Variables.
+# Si no está definida, Sentry se desactiva silenciosamente.
+_sentry_dsn = os.environ.get("SENTRY_DSN", "")
+if _sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        integrations=[
+            FlaskIntegration(),
+            SqlalchemyIntegration(),          # captura errores de DB
+            LoggingIntegration(
+                level=logging.WARNING,        # captura WARNING+
+                event_level=logging.ERROR,    # crea evento en Sentry solo en ERROR+
+            ),
+        ],
+        traces_sample_rate=0.1,              # 10% de requests trackeadas (performance)
+        environment=os.environ.get("FLASK_ENV", "development"),
+        release=os.environ.get("RENDER_GIT_COMMIT", "unknown"),  # SHA del commit
+        send_default_pii=False,              # no enviar datos personales
+    )
+    log.info("  [✓] Sentry initialized (env=%s)", os.environ.get("FLASK_ENV"))
+else:
+    log.info("  [−] Sentry disabled (SENTRY_DSN not set)")
 
 
 def create_app():

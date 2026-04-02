@@ -44,5 +44,8 @@ reportlab==4.2.2
 Pillow==10.4.0
 pypdf==4.3.1
 
+# ── Monitoring ────────────────────────────────────────────
+sentry-sdk[flask]==2.22.0
+
 # ── Environment ───────────────────────────────────────────
 python-dotenv==1.0.1
