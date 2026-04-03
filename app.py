@@ -8,10 +8,15 @@
 #
 # FASE 2 — Wiring:
 #     3. OAuth
-#     4. Conductor + wire_auth()  ← subsistema de control integrado
-#     5. Tracer  ← wire del tracer (before/after_request + loop handler)
+#     4. Conductor + wire_auth()
+#     5. Tracer
 #     6. Alembic migrations
 #     7. db.create_all()
+#
+# Sentry:
+#     - Inicializado antes de create_app()
+#     - _before_send_filter limpia variables sensibles
+#     - capture_exception en todos los bloques críticos del wiring
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
@@ -36,59 +41,115 @@ logging.basicConfig(
 )
 log = logging.getLogger("aureon")
 
-# ── Sentry — inicializar antes de crear la app ─────────────────────────────
-# Captura errores automáticamente en producción y los envía al dashboard.
-# SENTRY_DSN debe estar definida en Render → Environment Variables.
-# Si no está definida, Sentry se desactiva silenciosamente.
+
+# ══════════════════════════════════════════════════════════
+# SENTRY — antes de create_app()
+# ══════════════════════════════════════════════════════════
+
+# Variables que nunca deben salir hacia Sentry
+_SENSITIVE_KEYS = {
+    "SENTRY_DSN",
+    "SECRET_KEY",
+    "DATABASE_URL",
+    "GOOGLE_CLIENT_SECRET",
+    "GITHUB_CLIENT_SECRET",
+    "PAYPAL_SECRET",
+    "SMTP_PASSWORD",
+}
+
+
+def _before_send_filter(event, hint):
+    """
+    Intercepta cada evento antes de enviarlo a Sentry.
+    Elimina variables de entorno sensibles del contexto
+    y limpia cualquier extra que las contenga.
+    """
+    # Limpiar contexto de runtime/entorno
+    for ctx_key in ("runtime", "environment", "os"):
+        ctx = event.get("contexts", {}).get(ctx_key, {})
+        for key in _SENSITIVE_KEYS:
+            ctx.pop(key, None)
+
+    # Limpiar extra
+    extra = event.get("extra", {})
+    for key in _SENSITIVE_KEYS:
+        extra.pop(key, None)
+
+    # Limpiar request data — nunca enviar headers de autorización
+    request_data = event.get("request", {})
+    headers = request_data.get("headers", {})
+    headers.pop("Authorization", None)
+    headers.pop("Cookie", None)
+
+    return event
+
+
 _sentry_dsn = os.environ.get("SENTRY_DSN", "")
+
 if _sentry_dsn:
     import sentry_sdk
-    from sentry_sdk.integrations.flask import FlaskIntegration
+    from sentry_sdk.integrations.flask      import FlaskIntegration
     from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-    from sentry_sdk.integrations.logging import LoggingIntegration
+    from sentry_sdk.integrations.logging    import LoggingIntegration
 
     sentry_sdk.init(
-        dsn=_sentry_dsn,
-        integrations=[
+        dsn                = _sentry_dsn,
+        integrations       = [
             FlaskIntegration(),
-            SqlalchemyIntegration(),          # captura errores de DB
+            SqlalchemyIntegration(),
             LoggingIntegration(
-                level=logging.WARNING,        # captura WARNING+
-                event_level=logging.ERROR,    # crea evento en Sentry solo en ERROR+
+                level       = logging.WARNING,   # captura WARNING+ en breadcrumbs
+                event_level = logging.ERROR,     # crea evento solo en ERROR+
             ),
         ],
-        traces_sample_rate=0.1,              # 10% de requests trackeadas (performance)
-        environment=os.environ.get("FLASK_ENV", "development"),
-        release=os.environ.get("RENDER_GIT_COMMIT", "unknown"),  # SHA del commit
-        send_default_pii=False,              # no enviar datos personales
+        traces_sample_rate = 0.1,                # 10% de requests trackeadas
+        environment        = os.environ.get("FLASK_ENV", "development"),
+        release            = os.environ.get("RENDER_GIT_COMMIT", "unknown"),
+        send_default_pii   = False,              # nunca enviar datos personales
+        before_send        = _before_send_filter,
     )
     log.info("  [✓] Sentry initialized (env=%s)", os.environ.get("FLASK_ENV"))
 else:
     log.info("  [−] Sentry disabled (SENTRY_DSN not set)")
 
 
+# ── Helper interno — captura a Sentry con contexto de fase ────────────────
+def _sentry_capture(exc: Exception, step: str, phase: str = "wiring") -> None:
+    """
+    Captura una excepción en Sentry con tags de fase y paso.
+    No lanza — si Sentry falla, el sistema continúa su propio raise.
+    Solo actúa si el SDK está disponible y el DSN está configurado.
+    """
+    if not _sentry_dsn:
+        return
+    try:
+        import sentry_sdk
+        with sentry_sdk.push_scope() as scope:
+            scope.set_tag("phase", phase)
+            scope.set_tag("step",  step)
+            scope.set_tag("env",   os.environ.get("FLASK_ENV", "development"))
+            sentry_sdk.capture_exception(exc)
+    except Exception as sentry_err:
+        log.error("  [Sentry] capture failed: %s", sentry_err)
+
+
+# ══════════════════════════════════════════════════════════
+# APP FACTORY
+# ══════════════════════════════════════════════════════════
+
 def create_app():
     from flask import Flask, render_template, jsonify
 
     app = Flask(__name__)
 
-    # ── Seguridad de sesión ────────────────────────────────
-    # SECRET_KEY debe estar definida en Render → Environment Variables.
-    # Sin ella, las cookies OAuth se invalidan entre workers y deploys.
-    # Generar con: python -c "import secrets; print(secrets.token_hex(32))"
     app.secret_key = os.environ.get("SECRET_KEY", "dev_secret_cambia_esto")
 
-    # Configuración de cookie robusta para OAuth en producción.
-    # SameSite=Lax permite que la cookie regrese tras el redirect de Google/GitHub.
-    # Secure=True sólo en producción (HTTPS); False en dev (HTTP local).
-    # Sin SESSION_COOKIE_DOMAIN → Flask lo infiere del request; evita
-    # problemas en subdominios de Render.
     _is_production = os.environ.get("FLASK_ENV") == "production"
     app.config["SESSION_COOKIE_SAMESITE"]    = "Lax"
-    app.config["SESSION_COOKIE_SECURE"]      = _is_production  # False en dev
+    app.config["SESSION_COOKIE_SECURE"]      = _is_production
     app.config["SESSION_COOKIE_HTTPONLY"]    = True
     app.config["SESSION_COOKIE_NAME"]        = "aureon_session"
-    app.config["PERMANENT_SESSION_LIFETIME"] = 3600            # 1 hora
+    app.config["PERMANENT_SESSION_LIFETIME"] = 3600
     app.config["MAX_CONTENT_LENGTH"]         = 100 * 1024 * 1024
 
     # ══════════════════════════════════════════════════════
@@ -103,6 +164,7 @@ def create_app():
         log.info("  [✓] Database initialized")
     except Exception as e:
         log.error("  [✗] Database init failed: %s", e)
+        _sentry_capture(e, step="db_init", phase="bootstrap")
         raise
 
     try:
@@ -112,6 +174,7 @@ def create_app():
         log.info("  [✓] Auth blueprints registered: /auth + /auth/passkey + /auth/oauth + /auth/account")
     except Exception as e:
         log.error("  [✗] Auth blueprints failed: %s", e)
+        _sentry_capture(e, step="auth_blueprints", phase="bootstrap")
         raise
 
     try:
@@ -120,6 +183,8 @@ def create_app():
         log.info("  [✓] Lifebound blueprint registered: /lifebound")
     except Exception as e:
         log.error("  [✗] Lifebound blueprint failed: %s", e)
+        _sentry_capture(e, step="lifebound_blueprint", phase="bootstrap")
+        # No raise — Lifebound no es crítico
 
     # ══════════════════════════════════════════════════════
     # FASE 2 — WIRING
@@ -134,8 +199,10 @@ def create_app():
         log.info("  [✓] OAuth configured")
     except Exception as e:
         log.error("  [✗] OAuth configuration failed: %s", e)
+        _sentry_capture(e, step="oauth")
+        # No raise — OAuth puede fallar sin tumbar el sistema
 
-    # 2b. Conductor + wire_auth (subsistema de control + middleware + contexto)
+    # 2b. Conductor + wire_auth
     try:
         from shared.control.conductor import conductor
         from products.auth.wiring import wire_auth
@@ -144,9 +211,10 @@ def create_app():
         log.info("  [✓] Conductor ready")
     except Exception as e:
         log.error("  [✗] Wiring failed: %s", e)
-        raise  # Crítico — sin wiring no hay auth
+        _sentry_capture(e, step="conductor")
+        raise  # Crítico
 
-    # 2c. Tracer — wire completo (before/after_request + loop error handler)
+    # 2c. Tracer
     try:
         from shared.control.tracer import Tracer, register_tracer, TraceLoopError
         tracer = Tracer(conductor)
@@ -157,9 +225,10 @@ def create_app():
         log.info("  [✓] Tracer wired (before_request / after_request / loop_error_handler)")
     except Exception as e:
         log.error("  [✗] Tracer wiring failed: %s", e)
-        raise  # Crítico — sin tracer no hay trazabilidad ni detección de loops
+        _sentry_capture(e, step="tracer")
+        raise  # Crítico
 
-    # 2d. Migraciones Alembic (corre al arrancar — aplica columnas pendientes)
+    # 2d. Alembic migrations
     try:
         from alembic.config import Config as AlembicConfig
         from alembic import command as alembic_command
@@ -172,9 +241,10 @@ def create_app():
         log.info("  [✓] Alembic migrations applied (head)")
     except Exception as e:
         log.error("  [✗] Alembic migration failed: %s", e)
+        _sentry_capture(e, step="alembic")
         # No raise — db.create_all actúa como fallback
 
-    # 2e. Crear / verificar tablas nuevas sin migración aún
+    # 2e. Crear / verificar tablas
     try:
         with app.app_context():
             from shared.db import db
@@ -182,7 +252,8 @@ def create_app():
             log.info("  [✓] Tables verified/created")
     except Exception as e:
         log.error("  [✗] db.create_all failed: %s", e)
-        raise
+        _sentry_capture(e, step="db_create_all")
+        raise  # Crítico
 
     # 2f. Rutas registradas (solo en desarrollo)
     if not _is_production:
@@ -229,14 +300,28 @@ def create_app():
 
     @app.route("/health")
     def health():
+        """
+        Endpoint público mínimo para Render y UptimeRobot.
+        Solo confirma que el sistema está vivo — sin datos internos.
+        """
+        return jsonify({"status": "ok"}), 200
+
+    @app.route("/health/full")
+    def health_full():
+        """
+        Endpoint completo con estado del conductor y tracer.
+        Proteger con @require_admin antes de ir a producción.
+        """
         from shared.control.conductor import conductor
         import shared.control.tracer as _tracer_mod
+
         payload = {
             "status":    "ok",
             "conductor": conductor.all_snapshots(),
         }
         if _tracer_mod._tracer_instance is not None:
             payload["tracer"] = _tracer_mod._tracer_instance.snapshot()
+
         return jsonify(payload), 200
 
     return app

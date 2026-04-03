@@ -2,24 +2,22 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # El Orquestador del sistema de control AUREON.
 #
-# Cambios respecto a la versión anterior:
-#   - Integrado con BreakerRegistry y GateRegistry (subsistema de control)
-#   - register_product() implementado (lo espera wiring.py)
-#   - call() — ejecuta funciones protegidas por breaker + gate
-#   - all_snapshots() — estado completo para healthcheck
-#   - BaseGate / BaseBreaker / BaseRegistry mantenidos para compatibilidad
-#     con componentes ya registrados vía register_gate / register_breaker
+# Cambios:
+#   - _notify_sentry() — integración con Sentry para TRIP_MODULE,
+#     TRIP_GLOBAL y SHUTDOWN. Solo en producción. Opcional si el SDK
+#     no está instalado o SENTRY_DSN no está definido.
 # ══════════════════════════════════════════════════════════════════════════════
 
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-from shared.control.alert   import Alert, Impact, Recovery, Origin, Severity
-from shared.control.gate    import BaseGate
-from shared.control.breaker import BaseBreaker
+from shared.control.alert    import Alert, Impact, Recovery, Origin, Severity
+from shared.control.gate     import BaseGate
+from shared.control.breaker  import BaseBreaker
 from shared.control.registry import BaseRegistry
 
 from shared.control.registries.base import BreakerRegistry, GateRegistry
@@ -27,6 +25,13 @@ from shared.control.breakers.base   import CircuitBreaker, BreakerOpenError, Bre
 from shared.control.gates.base      import Gate, GateClosed, GateSnapshot
 
 log = logging.getLogger("aureon.control.conductor")
+
+# Sentry — import opcional
+try:
+    import sentry_sdk
+    _SENTRY = True
+except ImportError:
+    _SENTRY = False
 
 
 # ══════════════════════════════════════════════════════════
@@ -70,35 +75,18 @@ class Decision:
 # ══════════════════════════════════════════════════════════
 
 class Conductor:
-    """
-    Orquestador central del sistema de control AUREON.
-
-    Dos modos de operación que conviven:
-
-    Modo evento (original):
-        Gate detecta problema → emite Alert → conductor.receive(alert)
-        → decide acción → ordena al Breaker si aplica
-
-    Modo llamada protegida (nuevo):
-        conductor.call("breaker_name", "gate_name", func, *args, **kwargs)
-        → comprueba gate → ejecuta bajo breaker → reporta resultado
-    """
 
     def __init__(self):
-        # Componentes legacy (BaseGate / BaseBreaker / BaseRegistry)
         self._gates:      Dict[str, BaseGate]     = {}
         self._breakers:   Dict[str, BaseBreaker]  = {}
         self._registries: Dict[str, BaseRegistry] = {}
-
-        # Productos registrados desde wiring.py
         self._products:   Dict[str, dict]         = {}
-
         self._callbacks:  List[Callable[[Alert, Decision], None]] = []
         self._decisions:  List[Decision]          = []
         self._ready       = False
 
     # ══════════════════════════════════════════════════════
-    # WIRING — registro de componentes (Fase 2)
+    # WIRING
     # ══════════════════════════════════════════════════════
 
     def register_gate(self, gate: BaseGate) -> None:
@@ -115,19 +103,6 @@ class Conductor:
         log.info("Conductor: Registry registrado — %s", registry.name)
 
     def register_product(self, name: str, meta: dict) -> None:
-        """
-        Registra un producto y sus componentes de control.
-        Llamado desde cada módulo en su wiring.py.
-
-        meta esperado:
-            {
-                "status":   "active",
-                "version":  "1.0",
-                "healthy":  True,
-                "breakers": ["google_oauth", "email_send", ...],
-                "gates":    ["oauth_google", "registration", ...],
-            }
-        """
         self._products[name] = {
             **meta,
             "registered_at": datetime.now(timezone.utc).isoformat(),
@@ -153,7 +128,7 @@ class Conductor:
         )
 
     # ══════════════════════════════════════════════════════
-    # LLAMADA PROTEGIDA — modo nuevo
+    # LLAMADA PROTEGIDA
     # ══════════════════════════════════════════════════════
 
     def call(
@@ -164,28 +139,12 @@ class Conductor:
         *args:        Any,
         **kwargs:     Any,
     ) -> Any:
-        """
-        Ejecuta func(*args, **kwargs) protegida por gate + breaker.
-
-        Orden:
-            1. Comprueba el gate — si está cerrado lanza GateClosed
-            2. Ejecuta bajo el breaker — si está abierto lanza BreakerOpenError
-            3. Cualquier excepción de func se propaga normalmente
-
-        Si gate_name o breaker_name no existen en sus registries,
-        la llamada pasa sin protección (fail-open) y se loguea una
-        advertencia — mejor que romper en producción por config faltante.
-
-        Uso desde oauth.py:
-            result = conductor.call(
-                "google_oauth", "oauth_google",
-                google_client.fetch_token, code=code,
-            )
-        """
         # 1. Gate
-        gate: Gate | None = GateRegistry.get(gate_name) if gate_name in GateRegistry else None
+        gate: Gate | None = (
+            GateRegistry.get(gate_name) if gate_name in GateRegistry else None
+        )
         if gate is not None:
-            gate.check()           # lanza GateClosed si está desactivado
+            gate.check()
         elif gate_name:
             log.warning("Conductor.call: gate '%s' no encontrado — fail-open", gate_name)
 
@@ -202,7 +161,7 @@ class Conductor:
             return func(*args, **kwargs)
 
     # ══════════════════════════════════════════════════════
-    # RECEPCIÓN DE ALERTAS — modo original
+    # RECEPCIÓN DE ALERTAS
     # ══════════════════════════════════════════════════════
 
     def receive(self, alert: Alert) -> Decision:
@@ -227,17 +186,6 @@ class Conductor:
     # ══════════════════════════════════════════════════════
 
     def _decide(self, alert: Alert) -> Decision:
-        """
-        ┌─────────────┬─────────────┬──────────────────────┐
-        │ Impact      │ Recovery    │ Action               │
-        ├─────────────┼─────────────┼──────────────────────┤
-        │ *           │ AUTO        │ LOG_AND_PASS         │
-        │ REQUEST     │ RUNTIME/+   │ BLOCK_REQUEST        │
-        │ MODULE      │ RUNTIME/+   │ TRIP_MODULE          │
-        │ GLOBAL      │ RUNTIME/+   │ TRIP_GLOBAL          │
-        │ GLOBAL      │ FATAL       │ SHUTDOWN             │
-        └─────────────┴─────────────┴──────────────────────┘
-        """
         impact   = alert.impact
         recovery = alert.recovery
 
@@ -284,30 +232,27 @@ class Conductor:
         alert  = decision.alert
 
         if action in (Action.CONTINUE, Action.LOG_AND_PASS, Action.BLOCK_REQUEST):
-            pass  # el Gate maneja BLOCK_REQUEST con GateResult.fail()
+            pass
 
         elif action == Action.TRIP_MODULE:
             self._trip_module(alert)
+            self._notify_sentry(decision)
 
         elif action == Action.TRIP_GLOBAL:
             self._trip_all(alert)
+            self._notify_sentry(decision)
 
         elif action == Action.SHUTDOWN:
             self._shutdown(alert)
+            self._notify_sentry(decision)
 
     def _trip_module(self, alert: Alert) -> None:
-        """
-        Intenta abrir el breaker del módulo.
-        Busca primero en BreakerRegistry (nuevo), luego en _breakers (legacy).
-        """
         module = alert.module
 
-        # Nuevo subsistema
         if module in BreakerRegistry:
             BreakerRegistry.get(module).trip()
             return
 
-        # Legacy
         breaker = self._breakers.get(module)
         if breaker:
             breaker.trip(alert)
@@ -317,11 +262,9 @@ class Conductor:
     def _trip_all(self, alert: Alert) -> None:
         log.critical("Conductor: TRIP GLOBAL — abriendo todos los breakers. [%s]", alert.code)
 
-        # Nuevo subsistema
         for name in BreakerRegistry.names():
             BreakerRegistry.get(name).trip()
 
-        # Legacy
         for breaker in self._breakers.values():
             if not breaker.is_open:
                 breaker.trip(alert)
@@ -332,6 +275,92 @@ class Conductor:
             alert.code, alert.message,
         )
         self._trip_all(alert)
+
+    # ══════════════════════════════════════════════════════
+    # SENTRY — notificación para acciones críticas
+    # ══════════════════════════════════════════════════════
+
+    def _notify_sentry(self, decision: Decision) -> None:
+        """
+        Envía un evento a Sentry cuando el Conductor toma una decisión
+        crítica (TRIP_MODULE, TRIP_GLOBAL, SHUTDOWN).
+
+        Solo se ejecuta en producción — en desarrollo solo se loguea.
+        No lanza excepciones — si Sentry falla, el sistema continúa.
+
+        Formato en Sentry:
+            Mensaje:  [AUREON] TRIP_MODULE — google_oauth
+            Contexto: alert, breakers activos, gates activos, productos
+        """
+        if not _SENTRY:
+            return
+
+        # Solo en producción
+        if os.environ.get("FLASK_ENV") != "production":
+            log.debug("[Sentry] skipped — not production (action=%s)", decision.action.value)
+            return
+
+        try:
+            alert = decision.alert
+
+            # Nivel Sentry según acción
+            level_map = {
+                Action.TRIP_MODULE: "warning",
+                Action.TRIP_GLOBAL: "error",
+                Action.SHUTDOWN:    "fatal",
+            }
+            level = level_map.get(decision.action, "warning")
+
+            # Snapshot de breakers para contexto
+            breaker_context = {
+                s.name: {
+                    "state":    s.state.value,
+                    "failures": s.failure_count,
+                }
+                for s in BreakerRegistry.all_snapshots()
+            }
+
+            # Snapshot de gates para contexto
+            gate_context = {
+                s.name: s.enabled
+                for s in GateRegistry.all_snapshots()
+            }
+
+            with sentry_sdk.push_scope() as scope:
+                # Tags — aparecen en el dashboard y permiten filtrar
+                scope.set_tag("aureon.action",   decision.action.value)
+                scope.set_tag("aureon.module",   alert.module or "global")
+                scope.set_tag("aureon.impact",   alert.impact.value)
+                scope.set_tag("aureon.recovery", alert.recovery.value)
+                scope.set_tag("aureon.severity", alert.severity.value)
+                scope.set_tag("aureon.origin",   alert.origin.value)
+
+                # Contexto completo — visible al abrir el evento en Sentry
+                scope.set_context("alert", {
+                    "code":     alert.code,
+                    "message":  alert.message,
+                    "module":   alert.module,
+                    "alert_id": alert.alert_id,
+                })
+                scope.set_context("breakers", breaker_context)
+                scope.set_context("gates",    gate_context)
+                scope.set_context("products", self._products)
+
+                scope.set_level(level)
+
+                sentry_sdk.capture_message(
+                    f"[AUREON] {decision.action.value.upper()} — "
+                    f"{alert.module or 'global'} | {alert.code}"
+                )
+
+            log.info(
+                "[Sentry] evento enviado — action=%s module=%s level=%s",
+                decision.action.value, alert.module, level,
+            )
+
+        except Exception as e:
+            # Sentry no puede romper el sistema de control
+            log.error("[Sentry] error al notificar: %s", e)
 
     # ══════════════════════════════════════════════════════
     # REGISTRO
@@ -356,20 +385,15 @@ class Conductor:
     # ══════════════════════════════════════════════════════
 
     def status(self) -> dict:
-        """Estado completo del sistema para healthcheck y auditoría."""
         return {
             "ready":      self._ready,
             "products":   self._products,
-            "breakers":   {
-                # nuevo subsistema
+            "breakers": {
                 **{s.name: s.__dict__ for s in BreakerRegistry.all_snapshots()},
-                # legacy
                 **{n: b.to_dict() for n, b in self._breakers.items()},
             },
             "gates": {
-                # nuevo subsistema
                 **{s.name: s.__dict__ for s in GateRegistry.all_snapshots()},
-                # legacy
                 **{n: str(g) for n, g in self._gates.items()},
             },
             "registries":    {n: r.snapshot() for n, r in self._registries.items()},
@@ -380,10 +404,6 @@ class Conductor:
         }
 
     def all_snapshots(self) -> dict:
-        """
-        Snapshot ligero para un endpoint /health o /admin/control.
-        Solo incluye el nuevo subsistema (BreakerRegistry + GateRegistry).
-        """
         return {
             "breakers": [s.__dict__ for s in BreakerRegistry.all_snapshots()],
             "gates":    [s.__dict__ for s in GateRegistry.all_snapshots()],
@@ -391,19 +411,16 @@ class Conductor:
         }
 
     def get_breaker(self, name: str) -> Optional[CircuitBreaker]:
-        """Busca en BreakerRegistry primero, luego en legacy."""
         if name in BreakerRegistry:
             return BreakerRegistry.get(name)
-        return self._breakers.get(name)  # type: ignore[return-value]
+        return self._breakers.get(name)
 
     def get_gate(self, name: str) -> Optional[Gate]:
-        """Busca en GateRegistry primero, luego en legacy."""
         if name in GateRegistry:
             return GateRegistry.get(name)
-        return self._gates.get(name)  # type: ignore[return-value]
+        return self._gates.get(name)
 
     def reset_breaker(self, name: str) -> bool:
-        """Cierra un breaker manualmente desde admin."""
         breaker = self.get_breaker(name)
         if not breaker:
             return False
@@ -412,7 +429,6 @@ class Conductor:
         return True
 
     def set_gate(self, name: str, enabled: bool) -> bool:
-        """Activa o desactiva un gate manualmente desde admin."""
         gate = self.get_gate(name)
         if not gate:
             return False
