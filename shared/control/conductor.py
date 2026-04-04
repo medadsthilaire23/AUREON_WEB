@@ -1,32 +1,58 @@
 # shared/control/conductor.py
 # ══════════════════════════════════════════════════════════════════════════════
-# El Orquestador del sistema de control AUREON.
+# CONDUCTOR — AUREON Sistema de Control v3.0
 #
-# Cambios:
-#   - _notify_sentry() — integración con Sentry para TRIP_MODULE,
-#     TRIP_GLOBAL y SHUTDOWN. Solo en producción. Opcional si el SDK
-#     no está instalado o SENTRY_DSN no está definido.
+# Cambios respecto a v2:
+#   - Lee el EventRegistry para correlacionar IDs — no recibe alertas crudas
+#   - Integra el Timer para cierre seguro de gates
+#   - Mantiene la tabla Impact × Recovery sin cambios
+#   - Mantiene compatibilidad total con conductor.call() y conductor.receive()
+#     para que el código existente no se rompa durante la migración
+#
+# Flujo v3:
+#   Gate registra FAILED en EventRegistry
+#       ↓
+#   Conductor.scan_registry() detecta la entrada FAILED
+#       ↓
+#   Decide acción (tabla Impact × Recovery)
+#       ↓
+#   Timer.watch(gate_name, on_drain=breaker.close)
+#       ↓
+#   Timer espera cola = 0 → Breaker cierra el gate
+#       ↓
+#   EventRegistry.transition(event_id, op_id, FINISH)
+#
+# Compatibilidad v2:
+#   conductor.receive(alert) sigue funcionando — traduce la alerta
+#   a una entrada en EventRegistry y continúa el flujo normal.
+#
+# Regla arquitectónica:
+#   Este módulo NO importa nada de products/.
 # ══════════════════════════════════════════════════════════════════════════════
+
+from __future__ import annotations
 
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-from shared.control.alert    import Alert, Impact, Recovery, Origin, Severity
-from shared.control.gate     import BaseGate
-from shared.control.breaker  import BaseBreaker
-from shared.control.registry import BaseRegistry
+from shared.control.alert       import Alert, Impact, Recovery, Origin, Severity
+from shared.control.gate        import BaseGate
+from shared.control.breaker     import BaseBreaker
+from shared.control.registry    import BaseRegistry
+from shared.control.event_id    import generate_event_id
+from shared.control.event_state import EventState
 
-from shared.control.registries.base import BreakerRegistry, GateRegistry
+from shared.control.registries.base import BreakerRegistry, GateRegistry, EventRegistry
 from shared.control.breakers.base   import CircuitBreaker, BreakerOpenError, BreakerSnapshot
 from shared.control.gates.base      import Gate, GateClosed, GateSnapshot
 
 log = logging.getLogger("aureon.control.conductor")
 
-# Sentry — import opcional
 try:
     import sentry_sdk
     _SENTRY = True
@@ -84,10 +110,20 @@ class Conductor:
         self._callbacks:  List[Callable[[Alert, Decision], None]] = []
         self._decisions:  List[Decision]          = []
         self._ready       = False
+        self._timer       = None   # inyectado en Fase 2 vía wire_timer()
+        self._lock        = threading.Lock()
 
     # ══════════════════════════════════════════════════════
     # WIRING
     # ══════════════════════════════════════════════════════
+
+    def wire_timer(self, timer) -> None:
+        """
+        Inyecta el Timer en Fase 2.
+        El Timer es el único que puede ordenar el cierre de un gate.
+        """
+        self._timer = timer
+        log.info("[Conductor] Timer inyectado")
 
     def register_gate(self, gate: BaseGate) -> None:
         self._gates[gate.name] = gate
@@ -128,7 +164,7 @@ class Conductor:
         )
 
     # ══════════════════════════════════════════════════════
-    # LLAMADA PROTEGIDA
+    # LLAMADA PROTEGIDA (v2 — sin cambios)
     # ══════════════════════════════════════════════════════
 
     def call(
@@ -139,7 +175,6 @@ class Conductor:
         *args:        Any,
         **kwargs:     Any,
     ) -> Any:
-        # 1. Gate
         gate: Gate | None = (
             GateRegistry.get(gate_name) if gate_name in GateRegistry else None
         )
@@ -148,7 +183,6 @@ class Conductor:
         elif gate_name:
             log.warning("Conductor.call: gate '%s' no encontrado — fail-open", gate_name)
 
-        # 2. Breaker
         breaker: CircuitBreaker | None = (
             BreakerRegistry.get(breaker_name)
             if breaker_name in BreakerRegistry else None
@@ -161,11 +195,178 @@ class Conductor:
             return func(*args, **kwargs)
 
     # ══════════════════════════════════════════════════════
-    # RECEPCIÓN DE ALERTAS
+    # v3 — LECTURA DEL REGISTRY
+    # ══════════════════════════════════════════════════════
+
+    def scan_registry(self) -> List[Decision]:
+        """
+        Lee el EventRegistry y procesa todas las entradas en FAILED.
+        Llamar periódicamente o desde un hook de after_request.
+
+        Para cada entrada FAILED:
+            1. Transiciona a PROCESSING
+            2. Decide la acción (tabla Impact × Recovery)
+            3. Ejecuta la acción (puede iniciar el Timer)
+            4. Transiciona a FINISH
+
+        Retorna la lista de decisiones tomadas en este scan.
+        """
+        failed_entries = EventRegistry.get_failed()
+        decisions      = []
+
+        for entry in failed_entries:
+            # Construir una Alert sintética desde la entrada
+            alert = Alert(
+                code     = f"REGISTRY_FAILED_{entry.op_id.replace('_', '')}",
+                message  = entry.error or f"Operación {entry.op_id} falló",
+                impact   = self._infer_impact(entry),
+                recovery = self._infer_recovery(entry),
+                origin   = Origin.INTERNAL,
+                module   = entry.module,
+                context  = {
+                    "event_id":   entry.event_id,
+                    "op_id":      entry.op_id,
+                    "gate":       entry.gate,
+                    "duration_ms": round(entry.duration_ms, 2),
+                },
+            )
+
+            # FAILED → PROCESSING
+            EventRegistry.transition(
+                entry.event_id, entry.op_id, EventState.PROCESSING
+            )
+
+            decision = self._decide(alert)
+            self._execute_v3(decision, entry)
+            decisions.append(decision)
+
+            # PROCESSING → FINISH
+            EventRegistry.transition(
+                entry.event_id, entry.op_id, EventState.FINISH
+            )
+
+            log.info("[Conductor] scan: %s", decision)
+
+        return decisions
+
+    def _infer_impact(self, entry) -> Impact:
+        """Infiere el impacto desde el gate y la operación."""
+        from shared.control.operation_gates import OPERATIONS
+        op = OPERATIONS.get(entry.op_id, {})
+        gates = op.get("gates", [])
+
+        if "BootGate" in gates:
+            return Impact.GLOBAL
+        if "DbGate" in gates and len(gates) == 1:
+            return Impact.MODULE
+        if "ModuleGate" in gates and len(gates) == 1:
+            return Impact.MODULE
+        return Impact.REQUEST
+
+    def _infer_recovery(self, entry) -> Recovery:
+        """Infiere la recuperabilidad desde la operación."""
+        from shared.control.operation_gates import OPERATIONS
+        op = OPERATIONS.get(entry.op_id, {})
+        gates = op.get("gates", [])
+
+        if "BootGate" in gates:
+            return Recovery.FATAL
+        if entry.gate in ("DbGate", "ModuleGate"):
+            return Recovery.RUNTIME
+        return Recovery.AUTO
+
+    def _execute_v3(self, decision: Decision, entry) -> None:
+        """
+        Ejecuta la decisión del Conductor usando el Timer.
+        Diferencia clave vs v2: el cierre del gate ocurre vía Timer,
+        no directamente — espera que la cola drene.
+        """
+        action = decision.action
+        alert  = decision.alert
+
+        if action in (Action.CONTINUE, Action.LOG_AND_PASS, Action.BLOCK_REQUEST):
+            return
+
+        gate_name = entry.gate
+
+        if action == Action.TRIP_MODULE:
+            self._schedule_close(gate_name, entry.event_id, entry.op_id)
+            self._notify_sentry(decision)
+
+        elif action == Action.TRIP_GLOBAL:
+            # Cerrar todos los gates vía Timer
+            all_gates = {"HttpGate", "DbGate", "ModuleGate"}
+            for gname in all_gates:
+                self._schedule_close(gname, entry.event_id, entry.op_id)
+            self._notify_sentry(decision)
+
+        elif action == Action.SHUTDOWN:
+            self._shutdown(alert)
+            self._notify_sentry(decision)
+
+    def _schedule_close(
+        self,
+        gate_name:    str,
+        trigger_event: str,
+        trigger_op:    str,
+    ) -> None:
+        """
+        Pide al Timer que observe la cola del gate y lo cierre cuando drene.
+        Si no hay Timer inyectado, cierra directamente (fallback v2).
+        """
+        if self._timer is None:
+            log.warning(
+                "[Conductor] Sin Timer — cerrando gate '%s' directamente",
+                gate_name,
+            )
+            self._close_gate_direct(gate_name)
+            return
+
+        def _on_drain():
+            self._close_gate_direct(gate_name)
+            log.info("[Conductor] Gate '%s' cerrado por Timer (cola drenada)", gate_name)
+
+        self._timer.watch(
+            gate_name     = gate_name,
+            trigger_event = trigger_event,
+            trigger_op    = trigger_op,
+            on_drain      = _on_drain,
+            max_wait_ms   = 30_000,
+        )
+        log.info("[Conductor] Timer observando gate='%s'", gate_name)
+
+    def _close_gate_direct(self, gate_name: str) -> None:
+        """Cierra el gate directamente — fallback o forzado."""
+        # Intentar en los gates concretos registrados
+        gate = self._gates.get(gate_name)
+        if gate and hasattr(gate, "close"):
+            gate.close()
+            return
+
+        # Intentar en GateRegistry (feature flags)
+        if gate_name in GateRegistry:
+            GateRegistry.get(gate_name).set_enabled(False)
+
+    # ══════════════════════════════════════════════════════
+    # RECEPCIÓN DE ALERTAS (v2 — compatibilidad)
     # ══════════════════════════════════════════════════════
 
     def receive(self, alert: Alert) -> Decision:
+        """
+        Compatibilidad v2 — sigue funcionando igual.
+        Adicionalmente registra el evento en EventRegistry.
+        """
         log.warning("Conductor recibe: %s", alert)
+
+        # Registrar en EventRegistry para trazabilidad
+        event_id = generate_event_id()
+        EventRegistry.record(
+            event_id = event_id,
+            op_id    = "OP000",       # op_id genérico para alertas v2
+            state    = EventState.FAILED,
+            gate     = alert.module or "unknown",
+            error    = alert.message,
+        )
 
         self._record_alert(alert)
         decision = self._decide(alert)
@@ -178,11 +379,14 @@ class Conductor:
             except Exception as e:
                 log.error("Conductor callback error: %s", e)
 
+        # Marcar como FINISH en el Registry
+        EventRegistry.transition(event_id, "OP000", EventState.FINISH)
+
         log.info("Conductor decide: %s", decision)
         return decision
 
     # ══════════════════════════════════════════════════════
-    # TABLA DE DECISIÓN
+    # TABLA DE DECISIÓN (sin cambios)
     # ══════════════════════════════════════════════════════
 
     def _decide(self, alert: Alert) -> Decision:
@@ -195,28 +399,24 @@ class Conductor:
                 alert   = alert,
                 message = f"Auto-recuperable — registrado y continuando. [{alert.code}]",
             )
-
         if impact == Impact.REQUEST:
             return Decision(
                 action  = Action.BLOCK_REQUEST,
                 alert   = alert,
                 message = f"Request bloqueado por validación fallida. [{alert.code}]",
             )
-
         if impact == Impact.MODULE:
             return Decision(
                 action  = Action.TRIP_MODULE,
                 alert   = alert,
                 message = f"Módulo '{alert.module}' cortado por fallo. [{alert.code}]",
             )
-
         if impact == Impact.GLOBAL and recovery == Recovery.FATAL:
             return Decision(
                 action  = Action.SHUTDOWN,
                 alert   = alert,
                 message = f"Fallo fatal global — iniciando shutdown controlado. [{alert.code}]",
             )
-
         return Decision(
             action  = Action.TRIP_GLOBAL,
             alert   = alert,
@@ -224,7 +424,7 @@ class Conductor:
         )
 
     # ══════════════════════════════════════════════════════
-    # EJECUCIÓN DE DECISIONES
+    # EJECUCIÓN v2 (compatibilidad)
     # ══════════════════════════════════════════════════════
 
     def _execute(self, decision: Decision) -> None:
@@ -233,26 +433,21 @@ class Conductor:
 
         if action in (Action.CONTINUE, Action.LOG_AND_PASS, Action.BLOCK_REQUEST):
             pass
-
         elif action == Action.TRIP_MODULE:
             self._trip_module(alert)
             self._notify_sentry(decision)
-
         elif action == Action.TRIP_GLOBAL:
             self._trip_all(alert)
             self._notify_sentry(decision)
-
         elif action == Action.SHUTDOWN:
             self._shutdown(alert)
             self._notify_sentry(decision)
 
     def _trip_module(self, alert: Alert) -> None:
         module = alert.module
-
         if module in BreakerRegistry:
             BreakerRegistry.get(module).trip()
             return
-
         breaker = self._breakers.get(module)
         if breaker:
             breaker.trip(alert)
@@ -261,10 +456,8 @@ class Conductor:
 
     def _trip_all(self, alert: Alert) -> None:
         log.critical("Conductor: TRIP GLOBAL — abriendo todos los breakers. [%s]", alert.code)
-
         for name in BreakerRegistry.names():
             BreakerRegistry.get(name).trip()
-
         for breaker in self._breakers.values():
             if not breaker.is_open:
                 breaker.trip(alert)
@@ -277,33 +470,16 @@ class Conductor:
         self._trip_all(alert)
 
     # ══════════════════════════════════════════════════════
-    # SENTRY — notificación para acciones críticas
+    # SENTRY
     # ══════════════════════════════════════════════════════
 
     def _notify_sentry(self, decision: Decision) -> None:
-        """
-        Envía un evento a Sentry cuando el Conductor toma una decisión
-        crítica (TRIP_MODULE, TRIP_GLOBAL, SHUTDOWN).
-
-        Solo se ejecuta en producción — en desarrollo solo se loguea.
-        No lanza excepciones — si Sentry falla, el sistema continúa.
-
-        Formato en Sentry:
-            Mensaje:  [AUREON] TRIP_MODULE — google_oauth
-            Contexto: alert, breakers activos, gates activos, productos
-        """
         if not _SENTRY:
             return
-
-        # Solo en producción
         if os.environ.get("FLASK_ENV") != "production":
-            log.debug("[Sentry] skipped — not production (action=%s)", decision.action.value)
             return
-
         try:
             alert = decision.alert
-
-            # Nivel Sentry según acción
             level_map = {
                 Action.TRIP_MODULE: "warning",
                 Action.TRIP_GLOBAL: "error",
@@ -311,59 +487,36 @@ class Conductor:
             }
             level = level_map.get(decision.action, "warning")
 
-            # Snapshot de breakers para contexto
-            breaker_context = {
-                s.name: {
-                    "state":    s.state.value,
-                    "failures": s.failure_count,
-                }
-                for s in BreakerRegistry.all_snapshots()
-            }
-
-            # Snapshot de gates para contexto
-            gate_context = {
-                s.name: s.enabled
-                for s in GateRegistry.all_snapshots()
-            }
+            registry_snap = EventRegistry.snapshot()
 
             with sentry_sdk.push_scope() as scope:
-                # Tags — aparecen en el dashboard y permiten filtrar
                 scope.set_tag("aureon.action",   decision.action.value)
                 scope.set_tag("aureon.module",   alert.module or "global")
                 scope.set_tag("aureon.impact",   alert.impact.value)
                 scope.set_tag("aureon.recovery", alert.recovery.value)
                 scope.set_tag("aureon.severity", alert.severity.value)
-                scope.set_tag("aureon.origin",   alert.origin.value)
-
-                # Contexto completo — visible al abrir el evento en Sentry
                 scope.set_context("alert", {
                     "code":     alert.code,
                     "message":  alert.message,
                     "module":   alert.module,
                     "alert_id": alert.alert_id,
                 })
-                scope.set_context("breakers", breaker_context)
-                scope.set_context("gates",    gate_context)
+                scope.set_context("registry", registry_snap)
+                scope.set_context("breakers", {
+                    s.name: {"state": s.state.value, "failures": s.failure_count}
+                    for s in BreakerRegistry.all_snapshots()
+                })
                 scope.set_context("products", self._products)
-
                 scope.set_level(level)
-
                 sentry_sdk.capture_message(
                     f"[AUREON] {decision.action.value.upper()} — "
                     f"{alert.module or 'global'} | {alert.code}"
                 )
-
-            log.info(
-                "[Sentry] evento enviado — action=%s module=%s level=%s",
-                decision.action.value, alert.module, level,
-            )
-
         except Exception as e:
-            # Sentry no puede romper el sistema de control
             log.error("[Sentry] error al notificar: %s", e)
 
     # ══════════════════════════════════════════════════════
-    # REGISTRO
+    # REGISTRO DE ALERTAS
     # ══════════════════════════════════════════════════════
 
     def _record_alert(self, alert: Alert) -> None:
@@ -386,8 +539,10 @@ class Conductor:
 
     def status(self) -> dict:
         return {
-            "ready":      self._ready,
-            "products":   self._products,
+            "ready":         self._ready,
+            "products":      self._products,
+            "timer_watching": self._timer.watching() if self._timer else [],
+            "registry":      EventRegistry.snapshot(),
             "breakers": {
                 **{s.name: s.__dict__ for s in BreakerRegistry.all_snapshots()},
                 **{n: b.to_dict() for n, b in self._breakers.items()},
@@ -408,6 +563,7 @@ class Conductor:
             "breakers": [s.__dict__ for s in BreakerRegistry.all_snapshots()],
             "gates":    [s.__dict__ for s in GateRegistry.all_snapshots()],
             "products": self._products,
+            "registry": EventRegistry.snapshot(),
         }
 
     def get_breaker(self, name: str) -> Optional[CircuitBreaker]:

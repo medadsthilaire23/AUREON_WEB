@@ -1,117 +1,123 @@
 # products/auth/wiring.py
 # ══════════════════════════════════════════════════════════════════════════════
-# Fase 2 (Wiring) del módulo auth.
+# Fase 2 (Wiring) del módulo auth — AUREON v3.0
 #
-# Responsabilidades:
-#   - Inyectar dependencias en AuthContext
-#   - Configurar middleware desacoplado
-#   - Registrar breakers y gates del módulo
-#   - Registrar módulo en Conductor
-#   - Validar consistencia del módulo
+# Cambios respecto a versión anterior:
+#   - _get_or_create_gate no silencia excepciones — falla explícitamente
+#   - wire_registry se llama siempre, incluso si el gate ya existía
+#   - _wire_control_layer eliminado — los breakers v2 (failure_threshold,
+#     recovery_timeout) no son compatibles con BreakerBase v3
+#     Los breakers v3 los gestiona el Conductor + Timer, no parámetros fijos
+#   - Los feature-flag gates (oauth_google, etc.) se mantienen en GateRegistry
 # ══════════════════════════════════════════════════════════════════════════════
 
 from shared.db                      import db
-from shared.auth_middleware         import configure_auth_middleware
-from shared.control.registries.base import BreakerRegistry, GateRegistry
+from shared.auth_middleware         import configure_auth_middleware, register_http_gate
+from shared.control.registries.base import GateRegistry, BreakerRegistry, event_registry
 
 from products.auth.context import auth_context
 
 
-# ── Configuración del subsistema de control ────────────────────────────────
+# ── Feature-flag gates (killswitches por funcionalidad) ───────────────────
+# Distintos de los gates concretos (HttpGate, DbGate, ModuleGate).
+# Estos controlan si una funcionalidad específica está habilitada.
 
-_BREAKERS = [
-    # name                  failure_threshold   recovery_timeout
-    ("google_oauth",        5,                  60.0),
-    ("github_oauth",        5,                  60.0),
-    ("passkey_verify",      3,                  30.0),
-    ("email_send",          4,                  120.0),
-]
-
-_GATES = [
-    # name                  enabled
-    ("oauth_google",        True),
-    ("oauth_github",        True),
-    ("passkey_login",       True),
-    ("registration",        True),
+_FEATURE_GATES = [
+    ("oauth_google",  True),
+    ("oauth_github",  True),
+    ("passkey_login", True),
+    ("registration",  True),
 ]
 
 
-def _wire_control_layer(app) -> None:
-    """
-    Registra circuit breakers y gates del módulo auth.
-    Idempotente: si ya existen (hot-reload en dev) no lanza error.
-    """
-    for name, threshold, timeout in _BREAKERS:
-        if name not in BreakerRegistry:
-            BreakerRegistry.get(name,
-                failure_threshold=threshold,
-                recovery_timeout=timeout,
-            )
-
-    for name, enabled in _GATES:
+def _ensure_feature_gates(app) -> None:
+    """Registra los feature-flag gates si no existen."""
+    from shared.control.gates.base import Gate
+    for name, enabled in _FEATURE_GATES:
         if name not in GateRegistry:
-            GateRegistry.get(name, enabled=enabled)
+            GateRegistry.register(Gate(name=name, enabled=enabled))
+    app.logger.info("  [✓] Feature gates: %s", [n for n, _ in _FEATURE_GATES])
 
-    # ── Confirmación en arranque ──────────────────────────
-    app.logger.info("  [✓] Control layer wired")
 
-    for name, threshold, timeout in _BREAKERS:
-        snap = BreakerRegistry.get(name).snapshot()
-        app.logger.info(
-            "      BREAKER %-20s  state=%-9s  threshold=%d  timeout=%.0fs",
-            name, snap.state.value, threshold, timeout,
-        )
+def _get_or_create_concrete_gate(app, gate_class, gate_name: str):
+    """
+    Devuelve el gate concreto si ya está en GateRegistry,
+    o lo crea, registra e inyecta wire_registry.
 
-    for name, enabled in _GATES:
-        app.logger.info(
-            "      GATE    %-20s  enabled=%s",
-            name, enabled,
-        )
+    No silencia excepciones — un gate concreto que falla al crearse
+    es un error crítico de wiring.
+
+    Llama wire_registry siempre — aunque el gate ya existiera,
+    garantiza que el EventRegistry esté inyectado.
+    """
+    if gate_name in GateRegistry:
+        gate = GateRegistry.get(gate_name)
+    else:
+        gate = gate_class(name=gate_name)
+        GateRegistry.register(gate)
+        app.logger.info("      GATE    %-20s  created", gate_name)
+
+    # Siempre inyectar — idempotente si ya estaba inyectado
+    if hasattr(gate, "wire_registry"):
+        gate.wire_registry(event_registry)
+
+    return gate
 
 
 # ── Punto de entrada principal ─────────────────────────────────────────────
 
 def wire_auth(app, conductor) -> None:
-    """
-    Ejecuta el cableado completo del módulo auth.
-    """
 
     # ═══════════════════════════════════════════════════════
-    # IMPORTS LOCALES (ROMPEN CICLOS)
+    # IMPORTS LOCALES (rompen ciclos de importación)
     # ═══════════════════════════════════════════════════════
 
     from products.auth.models import (
-        User,
-        UserIdentity,
-        UserDevice,
-        UserSession,
-        UserProduct,
+        User, UserIdentity, UserDevice, UserSession, UserProduct,
     )
-
     from products.auth.utils import (
-        create_access_token,
-        create_refresh_token,
-        decode_token,
-        hash_token,
-        hash_password,
-        verify_password,
-        validate_password_strength,
-        parse_device,
-        is_new_device,
+        create_access_token, create_refresh_token, decode_token,
+        hash_token, hash_password, verify_password,
+        validate_password_strength, parse_device, is_new_device,
     )
-
     from products.auth.email import (
-        send_verification_email,
-        send_new_device_alert,
-        send_reset_password_email,
-        send_sessions_revoked_email,
+        send_verification_email, send_new_device_alert,
+        send_reset_password_email, send_sessions_revoked_email,
+        set_module_gate as email_set_gate,
+    )
+    from products.auth.oauth   import set_module_gate as oauth_set_gate
+    from products.auth.passkey import set_module_gate as passkey_set_gate
+
+    from shared.control.gates.http_gate   import HttpGate
+    from shared.control.gates.db_gate     import DbGate
+    from shared.control.gates.module_gate import ModuleGate
+
+    # ═══════════════════════════════════════════════════════
+    # FEATURE GATES
+    # ═══════════════════════════════════════════════════════
+
+    _ensure_feature_gates(app)
+
+    # ═══════════════════════════════════════════════════════
+    # GATES CONCRETOS v3
+    # ═══════════════════════════════════════════════════════
+
+    http_gate   = _get_or_create_concrete_gate(app, HttpGate,   "HttpGate")
+    db_gate     = _get_or_create_concrete_gate(app, DbGate,     "DbGate")
+    module_gate = _get_or_create_concrete_gate(app, ModuleGate, "ModuleGate")
+
+    app.logger.info(
+        "  [✓] Gates concretos — HttpGate, DbGate, ModuleGate (registry inyectado)"
     )
 
     # ═══════════════════════════════════════════════════════
-    # SUBSISTEMA DE CONTROL
+    # INYECCIÓN EN MÓDULOS EXTERNOS
     # ═══════════════════════════════════════════════════════
 
-    _wire_control_layer(app)
+    oauth_set_gate(module_gate)
+    passkey_set_gate(module_gate)
+    email_set_gate(module_gate)
+    app.logger.info("  [✓] ModuleGate inyectado en oauth, passkey, email")
 
     # ═══════════════════════════════════════════════════════
     # INYECCIÓN EN CONTEXTO
@@ -141,11 +147,11 @@ def wire_auth(app, conductor) -> None:
     auth_context.send_sessions_revoked_email = send_sessions_revoked_email
 
     auth_context.conductor                   = conductor
-    auth_context.breaker_registry            = BreakerRegistry
     auth_context.gate_registry               = GateRegistry
+    auth_context.breaker_registry            = BreakerRegistry
 
     # ═══════════════════════════════════════════════════════
-    # CONFIGURAR MIDDLEWARE (DESACOPLADO)
+    # MIDDLEWARE — HttpGate incluido
     # ═══════════════════════════════════════════════════════
 
     configure_auth_middleware(
@@ -155,10 +161,13 @@ def wire_auth(app, conductor) -> None:
         user_model         = User,
         db_instance        = db,
         conductor          = conductor,
+        http_gate          = http_gate,
     )
 
+    register_http_gate(app)
+
     # ═══════════════════════════════════════════════════════
-    # VALIDACIÓN DEL CONTEXTO (BOOT SAFETY)
+    # VALIDACIÓN DEL CONTEXTO
     # ═══════════════════════════════════════════════════════
 
     auth_context.validate()
@@ -168,18 +177,10 @@ def wire_auth(app, conductor) -> None:
     # ═══════════════════════════════════════════════════════
 
     conductor.register_product("auth", {
-        "status":   "active",
-        "version":  "1.0",
-        "healthy":  True,
-        "breakers": [name for name, *_ in _BREAKERS],
-        "gates":    [name for name, *_ in _GATES],
+        "status":  "active",
+        "version": "1.0",
+        "healthy": True,
+        "gates":   ["HttpGate", "DbGate", "ModuleGate"] + [n for n, _ in _FEATURE_GATES],
     })
 
-    # ═══════════════════════════════════════════════════════
-    # LOGGING DE ARRANQUE
-    # ═══════════════════════════════════════════════════════
-
-    app.logger.info(
-        "  [✓] Auth wired — breakers=%d gates=%d",
-        len(_BREAKERS), len(_GATES),
-    )
+    app.logger.info("  [✓] Auth wired")

@@ -1,21 +1,11 @@
 """
 products/auth/oauth.py
 ======================
-OAuth 2.0 — Google y GitHub como métodos de login de respaldo.
+OAuth 2.0 — Google y GitHub.
 
-Flujo por proveedor (2 pasos):
-    1. GET  /auth/oauth/<provider>           → redirige al proveedor
-    2. GET  /auth/oauth/<provider>/callback  → procesa respuesta y crea sesión
-
-Proveedores soportados:
-    - google
-    - github
-
-Si el email ya existe en Aureon (por cualquier proveedor),
-se vincula automáticamente al mismo user_id — una sola cuenta.
-
-Dependencia:
-    pip install authlib requests
+v3 — ModuleGate checkpoints en:
+     - authorize_access_token()   → OP003_002_001 / OP004_002_001
+     - userinfo / user/emails     → OP003_002_002 / OP004_002_002 / OP004_002_003
 """
 
 import os
@@ -24,7 +14,7 @@ from datetime import datetime, timezone
 
 import requests
 from authlib.integrations.flask_client import OAuth
-from flask import Blueprint, jsonify, redirect, request, session, url_for
+from flask import Blueprint, g, jsonify, redirect, request, session, url_for
 
 from shared.db import db
 from products.auth.models import User, UserIdentity, UserProduct, UserDevice, UserSession
@@ -40,32 +30,32 @@ oauth_bp = Blueprint("oauth", __name__, url_prefix="/auth/oauth")
 
 APP_URL = os.environ.get("APP_URL", "https://aureon.com")
 
-# ── Inicializar Authlib OAuth ──────────────────────────────
+# ModuleGate — inyectado en Fase 2 desde wiring.py
+_module_gate = None
+
+
+def set_module_gate(gate) -> None:
+    """Llamado desde wiring.py en Fase 2."""
+    global _module_gate
+    _module_gate = gate
+
+
+# ── Inicializar Authlib OAuth ──────────────────────────────────────────────
+
 oauth = OAuth()
 
 
 def init_oauth(app):
-    """
-    Registra los proveedores OAuth en la app Flask.
-    Llamar desde app.py después de crear la app.
-
-        from products.auth.oauth import init_oauth
-        init_oauth(app)
-    """
     oauth.init_app(app)
 
-    # ── Google ─────────────────────────────────────────────
     oauth.register(
         name="google",
         client_id=os.environ.get("GOOGLE_CLIENT_ID"),
         client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={
-            "scope": "openid email profile",
-        },
+        client_kwargs={"scope": "openid email profile"},
     )
 
-    # ── GitHub ─────────────────────────────────────────────
     oauth.register(
         name="github",
         client_id=os.environ.get("GITHUB_CLIENT_ID"),
@@ -73,10 +63,33 @@ def init_oauth(app):
         access_token_url="https://github.com/login/oauth/access_token",
         authorize_url="https://github.com/login/oauth/authorize",
         api_base_url="https://api.github.com/",
-        client_kwargs={
-            "scope": "user:email",
-        },
+        client_kwargs={"scope": "user:email"},
     )
+
+
+# ── Helpers de gate ────────────────────────────────────────────────────────
+
+def _event_id() -> str | None:
+    try:
+        from flask import g
+        return getattr(g, "event_id", None)
+    except RuntimeError:
+        return None
+
+
+def _gate_pending(op_id: str) -> None:
+    if _module_gate and _event_id():
+        _module_gate.record_pending(_event_id(), op_id)
+
+
+def _gate_ok(op_id: str) -> None:
+    if _module_gate and _event_id():
+        _module_gate.record_ok(_event_id(), op_id)
+
+
+def _gate_fail(op_id: str, error: str) -> None:
+    if _module_gate and _event_id():
+        _module_gate.record_fail(_event_id(), op_id, error=error)
 
 
 # ══════════════════════════════════════════════════════════
@@ -85,15 +98,6 @@ def init_oauth(app):
 
 def _get_or_create_user(provider: str, provider_id: str,
                         email: str, name: str, avatar_url: str = None) -> User:
-    """
-    Busca o crea un usuario Aureon a partir de los datos del proveedor OAuth.
-
-    Lógica:
-        1. Buscar UserIdentity por (provider, provider_id) → usuario ya vinculado
-        2. Buscar User por email → vincular proveedor a cuenta existente
-        3. Crear usuario nuevo → primera vez con este proveedor
-    """
-    # 1. Buscar identity existente
     identity = UserIdentity.query.filter_by(
         provider=provider,
         provider_id=str(provider_id),
@@ -102,24 +106,19 @@ def _get_or_create_user(provider: str, provider_id: str,
     if identity:
         return User.query.get(identity.user_id)
 
-    # 2. Buscar usuario por email (cuenta Aureon o de otro proveedor)
     user = User.query.filter_by(email=email).first()
 
     if not user:
-        # 3. Crear usuario nuevo
         user = User(
             name=name,
             email=email,
             avatar_url=avatar_url,
-            is_verified=True,  # OAuth ya verificó el email
+            is_verified=True,
         )
         db.session.add(user)
         db.session.flush()
-
-        # Dar acceso a Lifebound por defecto
         db.session.add(UserProduct(user_id=user.id, product_id="lifebound"))
 
-    # Vincular el proveedor OAuth al usuario
     new_identity = UserIdentity(
         user_id=user.id,
         provider=provider,
@@ -127,7 +126,6 @@ def _get_or_create_user(provider: str, provider_id: str,
     )
     db.session.add(new_identity)
 
-    # Marcar como verificado si no lo estaba
     if not user.is_verified:
         user.is_verified = True
 
@@ -136,11 +134,9 @@ def _get_or_create_user(provider: str, provider_id: str,
 
 
 def _create_oauth_session(user: User) -> dict:
-    """Crea sesión y retorna tokens tras login OAuth."""
     device_info = parse_device(request)
     new_device  = is_new_device(user, device_info)
 
-    # Buscar o crear dispositivo
     device = None
     if device_info.get("fingerprint"):
         device = UserDevice.query.filter_by(
@@ -155,7 +151,6 @@ def _create_oauth_session(user: User) -> dict:
 
     device.last_seen_at = datetime.now(timezone.utc)
 
-    # Generar session_id antes del INSERT para poder crear tokens sin flush
     import uuid as _uuid
     session_id = str(_uuid.uuid4())
 
@@ -173,7 +168,6 @@ def _create_oauth_session(user: User) -> dict:
     db.session.add(user_session)
     db.session.commit()
 
-    # Alerta si es dispositivo nuevo
     if new_device:
         send_new_device_alert(
             user.email, user.name,
@@ -190,21 +184,16 @@ def _create_oauth_session(user: User) -> dict:
 
 
 def _oauth_redirect(tokens: dict):
-    """
-    Guarda tokens en sesión Flask y redirige a /auth/oauth-complete
-    que los mueve a localStorage limpiamente, sin tokens en la URL.
-    """
     raw_redirect = session.pop("oauth_redirect", "/")
     session.pop("oauth_product_id", None)
 
-    # Limpiar tokens acumulados en el redirect — tomar solo el path base
-    from urllib.parse import urlparse, urlunparse
-    parsed = urlparse(raw_redirect)
-    clean_redirect = parsed.path  # solo el path, sin query params
+    from urllib.parse import urlparse
+    parsed       = urlparse(raw_redirect)
+    clean_redirect = parsed.path or "/"
 
     session["oauth_access_token"]   = tokens["access_token"]
     session["oauth_refresh_token"]  = tokens["refresh_token"]
-    session["oauth_final_redirect"] = clean_redirect or "/"
+    session["oauth_final_redirect"] = clean_redirect
     return redirect(f"{APP_URL}/auth/oauth-complete")
 
 
@@ -214,34 +203,34 @@ def _oauth_redirect(tokens: dict):
 
 @oauth_bp.route("/google")
 def google_login():
-    """
-    Inicia el flujo OAuth con Google.
-
-    Query params opcionales:
-        product_id  — producto que solicita el acceso
-        redirect    — URL de retorno tras autenticación
-    """
     session["oauth_product_id"] = request.args.get("product_id", "")
     session["oauth_redirect"]   = request.args.get("redirect",    "/")
-
     callback_url = f"{APP_URL}/auth/oauth/google/callback"
     return oauth.google.authorize_redirect(callback_url)
 
 
 @oauth_bp.route("/google/callback")
 def google_callback():
-    """Procesa la respuesta de Google y crea sesión Aureon."""
     try:
-        token    = oauth.google.authorize_access_token()
+        # OP003_002_001 — token exchange con Google
+        _gate_pending("OP003_002_001")
+        token = oauth.google.authorize_access_token()
+        _gate_ok("OP003_002_001")
+
+        # OP003_002_002 — obtener userinfo
+        _gate_pending("OP003_002_002")
         userinfo = token.get("userinfo") or oauth.google.userinfo(token=token)
+        _gate_ok("OP003_002_002")
+
     except Exception as e:
         log.error("Google OAuth error: %s", e)
+        _gate_fail("OP003_002_001", str(e))
         return redirect(f"{APP_URL}/auth/login?error=google_failed")
 
-    email      = userinfo.get("email", "").lower()
-    name       = userinfo.get("name",  "Unknown")
-    provider_id= userinfo.get("sub",   "")
-    avatar_url = userinfo.get("picture")
+    email       = userinfo.get("email", "").lower()
+    name        = userinfo.get("name",  "Unknown")
+    provider_id = userinfo.get("sub",   "")
+    avatar_url  = userinfo.get("picture")
 
     if not email:
         return redirect(f"{APP_URL}/auth/login?error=no_email")
@@ -259,37 +248,36 @@ def google_callback():
 
 @oauth_bp.route("/github")
 def github_login():
-    """
-    Inicia el flujo OAuth con GitHub.
-
-    Query params opcionales:
-        product_id  — producto que solicita el acceso
-        redirect    — URL de retorno tras autenticación
-    """
     session["oauth_product_id"] = request.args.get("product_id", "")
     session["oauth_redirect"]   = request.args.get("redirect",    "/")
-
     callback_url = f"{APP_URL}/auth/oauth/github/callback"
     return oauth.github.authorize_redirect(callback_url)
 
 
 @oauth_bp.route("/github/callback")
 def github_callback():
-    """Procesa la respuesta de GitHub y crea sesión Aureon."""
     try:
+        # OP004_002_001 — token exchange con GitHub
+        _gate_pending("OP004_002_001")
         oauth.github.authorize_access_token()
+        _gate_ok("OP004_002_001")
+
+        # OP004_002_002 — obtener perfil
+        _gate_pending("OP004_002_002")
         resp = oauth.github.get("user")
         resp.raise_for_status()
         profile = resp.json()
+        _gate_ok("OP004_002_002")
+
     except Exception as e:
         log.error("GitHub OAuth error: %s", e)
+        _gate_fail("OP004_002_001", str(e))
         return redirect(f"{APP_URL}/auth/login?error=github_failed")
 
     provider_id = str(profile.get("id", ""))
     name        = profile.get("name") or profile.get("login", "Unknown")
     avatar_url  = profile.get("avatar_url")
 
-    # GitHub puede no devolver email público — buscarlo en /user/emails
     email = profile.get("email")
     if not email:
         email = _get_github_primary_email()
@@ -306,69 +294,51 @@ def github_callback():
 
 
 def _get_github_primary_email() -> str | None:
-    """
-    Obtiene el email primario verificado de GitHub cuando
-    el perfil no lo expone públicamente.
-    """
     try:
+        # OP004_002_003 — obtener emails de GitHub
+        _gate_pending("OP004_002_003")
         resp = oauth.github.get("user/emails")
         resp.raise_for_status()
         emails = resp.json()
+        _gate_ok("OP004_002_003")
+
         for entry in emails:
             if entry.get("primary") and entry.get("verified"):
                 return entry.get("email")
     except Exception as e:
         log.warning("No se pudo obtener email de GitHub: %s", e)
+        _gate_fail("OP004_002_003", str(e))
     return None
 
 
 # ══════════════════════════════════════════════════════════
-# LISTAR IDENTIDADES VINCULADAS
+# IDENTIDADES
 # ══════════════════════════════════════════════════════════
 
 @oauth_bp.route("/identities", methods=["GET"])
 def list_identities():
-    """
-    Lista los proveedores vinculados a la cuenta del usuario.
-    Requiere Authorization header con Bearer token.
-    """
-    from shared.auth_middleware import require_auth
-    from flask import g
-
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return jsonify({"error": "Token requerido"}), 401
 
-    from products.auth.utils import decode_token, hash_token as ht
-    from products.auth.models import UserSession
+    from products.auth.utils import decode_token
     try:
-        payload    = decode_token(auth_header.replace("Bearer ", "", 1).strip())
-        user_id    = payload["sub"]
+        payload = decode_token(auth_header.replace("Bearer ", "", 1).strip())
+        user_id = payload["sub"]
     except Exception:
         return jsonify({"error": "Token inválido"}), 401
 
     identities = UserIdentity.query.filter_by(user_id=user_id).all()
     return jsonify({
         "identities": [
-            {
-                "provider":    i.provider,
-                "created_at":  i.created_at.isoformat(),
-            }
+            {"provider": i.provider, "created_at": i.created_at.isoformat()}
             for i in identities
         ]
     }), 200
 
 
-# ══════════════════════════════════════════════════════════
-# DESVINCULAR PROVEEDOR
-# ══════════════════════════════════════════════════════════
-
 @oauth_bp.route("/identities/<provider>", methods=["DELETE"])
 def unlink_provider(provider):
-    """
-    Desvincula un proveedor OAuth de la cuenta.
-    Protege contra dejar la cuenta sin ningún método de login.
-    """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return jsonify({"error": "Token requerido"}), 401
@@ -381,21 +351,15 @@ def unlink_provider(provider):
     except Exception:
         return jsonify({"error": "Token inválido"}), 401
 
-    identity = UserIdentity.query.filter_by(
-        user_id=user_id, provider=provider
-    ).first()
-
+    identity = UserIdentity.query.filter_by(user_id=user_id, provider=provider).first()
     if not identity:
         return jsonify({"error": "Proveedor no vinculado"}), 404
 
-    # Contar métodos de login restantes
     total_identities = UserIdentity.query.filter_by(user_id=user_id).count()
     total_passkeys   = UserPasskey.query.filter_by(user_id=user_id).count()
 
     if total_identities <= 1 and total_passkeys == 0:
-        return jsonify({
-            "error": "No puedes desvincular tu único método de login"
-        }), 400
+        return jsonify({"error": "No puedes desvincular tu único método de login"}), 400
 
     db.session.delete(identity)
     db.session.commit()

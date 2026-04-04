@@ -1,23 +1,35 @@
-# products/auth/breakers/base.py
+# shared/control/breakers/base.py
 # ══════════════════════════════════════════════════════════════════════════════
-# CIRCUIT BREAKER BASE — AUREON Auth
+# CIRCUIT BREAKER BASE — AUREON Sistema de Control v3.0
 #
-# Protege operaciones críticas (login, OAuth, WebAuthn) contra fallos en
-# cascada. Implementa el patrón estándar de tres estados:
+# Cambios respecto a v2 (products/auth/breakers/base.py):
 #
-#   CLOSED   → operación fluye con normalidad; se cuentan fallos
-#   OPEN     → operación bloqueada; se devuelve fallo rápido (fast-fail)
-#   HALF_OPEN → prueba si el servicio recuperó; un éxito cierra, un fallo reabre
+#   ELIMINADO  — activación directa por fallo consecutivo
+#   ELIMINADO  — failure_threshold / recovery_timeout como parámetros de instancia
+#   ELIMINADO  — estado HALF_OPEN (el Conductor decide cuándo reabrir)
+#   MANTENIDO  — BreakerState, BreakerOpenError, BreakerSnapshot (interfaz pública)
+#   MANTENIDO  — reset() y trip() para control manual y compatibilidad v2
+#   NUEVO      — schedule_close(gate_name, event_id, op_id)
+#   NUEVO      — force_close(gate_name, event_id, op_id)
+#   NUEVO      — reopen(gate_name) — solo el Conductor puede reabrir
 #
-# Uso:
-#   from products.auth.breakers.base import CircuitBreaker, BreakerOpenError
+# Flujo de intervención normal:
+#   Conductor._schedule_close(gate_name, event_id, op_id)
+#       → BreakerBase.schedule_close(...)
+#           → Timer.watch(gate_name, on_drain=_execute_close)
+#               → _execute_close(gate_name, event_id, op_id, forced=False)
+#                   → GateRegistry.get(gate_name).set_enabled(False)
+#                   → EventRegistry.transition(event_id, op_id, FINISH)
 #
-#   breaker = CircuitBreaker("google_oauth", failure_threshold=5, recovery_timeout=60)
+# Flujo de emergencia (BootGate caído, timeout del Timer, señal OS):
+#   BreakerBase.force_close(gate_name, event_id, op_id)
+#       → _execute_close(..., forced=True)
+#       → cierre inmediato sin esperar cola
 #
-#   try:
-#       result = breaker.call(google_oauth_service.exchange_code, code=code)
-#   except BreakerOpenError:
-#       raise AuthError("SERVICE_UNAVAILABLE", "Servicio temporalmente no disponible")
+# Regla arquitectónica:
+#   Este módulo NO importa nada de products/.
+#   Recibe EventRegistry y GateRegistry por inyección en __init__.
+#   El Timer se inyecta en Fase 2 vía wire_timer().
 # ══════════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
@@ -27,209 +39,397 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Optional
 
-logger = logging.getLogger(__name__)
+from shared.control.event_state import EventState
+
+if TYPE_CHECKING:
+    from shared.control.registries.base import EventRegistryType, GateRegistryType
+    from shared.control.timer import Timer
+
+log = logging.getLogger("aureon.control.breaker")
 
 
-# ── Estados ────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ESTADOS
+# ══════════════════════════════════════════════════════════════════════════════
 
 class BreakerState(str, Enum):
-    CLOSED    = "closed"
-    OPEN      = "open"
-    HALF_OPEN = "half_open"
+    """
+    Estados del Breaker en v3.
+
+    STANDBY  → en espera, sin ninguna orden activa.
+    WATCHING → el Timer está observando la cola de un gate.
+               El gate sigue abierto — los eventos pendientes aún fluyen.
+    CLOSED   → el gate fue cerrado por decisión del Conductor (cola drenada).
+    FORCED   → cierre inmediato por emergencia (BootGate, timeout, señal OS).
+    """
+    STANDBY  = "standby"
+    WATCHING = "watching"
+    CLOSED   = "closed"
+    FORCED   = "forced"
 
 
-# ── Excepción pública ──────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# EXCEPCIÓN PÚBLICA — compatible con v2
+# ══════════════════════════════════════════════════════════════════════════════
 
 class BreakerOpenError(Exception):
     """
-    Lanzada cuando el circuit breaker está OPEN y rechaza la llamada.
-    El handler de auth debe traducirla a una respuesta 503 con retry-after.
+    Lanzada cuando se intenta ejecutar una operación cuyo gate está cerrado.
+    El handler correspondiente debe traducirla en una respuesta 503.
+
+    Compatible con v2 — mismo nombre, mismo contrato.
+    En v3 ya no incluye retry_after (el Conductor decide cuándo reabrir).
     """
-    def __init__(self, name: str, retry_after: float):
-        self.name        = name
-        self.retry_after = retry_after  # segundos hasta que pase a HALF_OPEN
-        super().__init__(f"Circuit breaker '{name}' open — retry after {retry_after:.1f}s")
+    def __init__(self, gate_name: str):
+        self.gate_name = gate_name
+        super().__init__(f"Gate '{gate_name}' cerrado — operación bloqueada por Breaker")
 
 
-# ── Snapshot de estado (para registry / métricas) ──────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# SNAPSHOT — compatible con v2
+# ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass(frozen=True)
 class BreakerSnapshot:
-    name:             str
-    state:            BreakerState
-    failure_count:    int
-    success_count:    int
-    last_failure_at:  float | None   # unix timestamp
-    opened_at:        float | None   # unix timestamp
-    retry_after:      float | None   # segundos restantes hasta HALF_OPEN, o None
-
-
-# ── Implementación ─────────────────────────────────────────────────────────
-
-@dataclass
-class CircuitBreaker:
     """
-    Circuit breaker thread-safe para operaciones de auth.
+    Estado del Breaker en un momento dado.
+    Compatible con v2 — mismo nombre, campos extendidos para v3.
+    """
+    name:            str
+    state:           BreakerState
+    gate_name:       Optional[str]    # gate bajo control activo
+    trigger_event:   Optional[str]    # event_id que disparó la orden
+    trigger_op:      Optional[str]    # op_id donde ocurrió el FAILED
+    closed_at:       Optional[float]  # unix timestamp del cierre real
+    forced:          bool             # True si fue un force_close
 
-    Parámetros
-    ----------
-    name                Identificador único (ej. "google_oauth", "passkey_verify")
-    failure_threshold   Fallos consecutivos para abrir el circuito          (default 5)
-    recovery_timeout    Segundos en OPEN antes de pasar a HALF_OPEN         (default 60)
-    half_open_max_calls Llamadas permitidas en HALF_OPEN antes de decidir   (default 1)
-    expected_exceptions Excepciones que cuentan como fallo; None = todas    (default None)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BREAKER BASE
+# ══════════════════════════════════════════════════════════════════════════════
+
+class BreakerBase:
+    """
+    Interruptor del sistema de control v3.
+
+    Una instancia por módulo o gate — la granularidad la decide wiring.py.
+
+    Responsabilidades:
+      - Recibir la orden de cierre del Conductor (schedule_close).
+      - Pasar al estado WATCHING y delegar el cierre al Timer.
+      - Ejecutar el cierre cuando el Timer confirma que la cola drenó.
+      - Ejecutar cierre inmediato en emergencias (force_close).
+      - Registrar el cierre en GateRegistry y EventRegistry.
+      - Permitir reapertura controlada por el Conductor (reopen).
     """
 
-    name:                 str
-    failure_threshold:    int                     = 5
-    recovery_timeout:     float                   = 60.0
-    half_open_max_calls:  int                     = 1
-    expected_exceptions:  tuple[type[Exception]]  | None = None
+    def __init__(
+        self,
+        name:           str,
+        event_registry: "EventRegistryType",
+        gate_registry:  "GateRegistryType",
+    ) -> None:
+        self.name    = name
+        self._events = event_registry
+        self._gates  = gate_registry
 
-    # Estado interno — no inicializar desde fuera
-    _state:             BreakerState = field(default=BreakerState.CLOSED, init=False, repr=False)
-    _failure_count:     int          = field(default=0,     init=False, repr=False)
-    _success_count:     int          = field(default=0,     init=False, repr=False)
-    _half_open_calls:   int          = field(default=0,     init=False, repr=False)
-    _last_failure_at:   float | None = field(default=None,  init=False, repr=False)
-    _opened_at:         float | None = field(default=None,  init=False, repr=False)
-    _lock:              threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+        # Timer inyectado en Fase 2 vía wire_timer()
+        self._timer: Optional["Timer"] = None
 
-    # ── Propiedad de estado ────────────────────────────────────────────────
+        # Estado interno
+        self._state:         BreakerState   = BreakerState.STANDBY
+        self._gate_name:     Optional[str]  = None
+        self._trigger_event: Optional[str]  = None
+        self._trigger_op:    Optional[str]  = None
+        self._closed_at:     Optional[float] = None
+        self._forced:        bool            = False
+
+        self._lock = threading.Lock()
+
+    # ══════════════════════════════════════════════════════
+    # WIRING — inyección del Timer en Fase 2
+    # ══════════════════════════════════════════════════════
+
+    def wire_timer(self, timer: "Timer") -> None:
+        """
+        Inyecta el Timer. Llamado por el Conductor en Fase 2.
+        Hasta que el Timer esté inyectado, schedule_close
+        cae en force_close como fallback seguro.
+        """
+        self._timer = timer
+        log.info("[Breaker:%s] Timer inyectado", self.name)
+
+    # ══════════════════════════════════════════════════════
+    # API PÚBLICA — llamada por el Conductor
+    # ══════════════════════════════════════════════════════
+
+    def schedule_close(
+        self,
+        gate_name:     str,
+        trigger_event: str,
+        trigger_op:    str,
+        max_wait_ms:   int = 30_000,
+    ) -> None:
+        """
+        Programa el cierre del gate cuando su cola drene.
+        Llamado exclusivamente por Conductor._schedule_close().
+
+        Si no hay Timer inyectado, cae en force_close (fallback v2).
+
+        Args:
+            gate_name     → gate a cerrar ("DbGate", "ModuleGate", etc.)
+            trigger_event → event_id del evento que llegó a FAILED
+            trigger_op    → op_id donde ocurrió el FAILED
+            max_wait_ms   → tiempo máximo antes de force_close por timeout
+        """
+        if self._timer is None:
+            log.warning(
+                "[Breaker:%s] Sin Timer — force_close inmediato en gate='%s'",
+                self.name, gate_name,
+            )
+            self.force_close(gate_name, trigger_event, trigger_op)
+            return
+
+        with self._lock:
+            self._gate_name     = gate_name
+            self._trigger_event = trigger_event
+            self._trigger_op    = trigger_op
+            self._forced        = False
+            self._state         = BreakerState.WATCHING
+
+        def _on_drain() -> None:
+            self._execute_close(gate_name, trigger_event, trigger_op, forced=False)
+
+        self._timer.watch(
+            gate_name     = gate_name,
+            trigger_event = trigger_event,
+            trigger_op    = trigger_op,
+            on_drain      = _on_drain,
+            max_wait_ms   = max_wait_ms,
+        )
+
+        log.info(
+            "[Breaker:%s] WATCHING gate='%s' trigger=%s op=%s max_wait=%dms",
+            self.name, gate_name, trigger_event, trigger_op, max_wait_ms,
+        )
+
+    def force_close(
+        self,
+        gate_name:     str,
+        trigger_event: str,
+        trigger_op:    str,
+    ) -> None:
+        """
+        Cierre inmediato del gate sin esperar al Timer.
+
+        Usado en:
+          - BootGate caído (el sistema no puede arrancar)
+          - Timeout del Timer (cola nunca drenó en max_wait_ms)
+          - Señal OS de shutdown
+          - Fallback cuando no hay Timer inyectado
+
+        Args:
+            gate_name     → gate a cerrar
+            trigger_event → event_id que originó la orden
+            trigger_op    → op_id del FAILED
+        """
+        log.warning(
+            "[Breaker:%s] force_close gate='%s' trigger=%s op=%s",
+            self.name, gate_name, trigger_event, trigger_op,
+        )
+        self._execute_close(gate_name, trigger_event, trigger_op, forced=True)
+
+    def reopen(self, gate_name: str) -> bool:
+        """
+        Reabre un gate cerrado por el Breaker.
+        Solo el Conductor puede llamar a esto.
+
+        Args:
+            gate_name → gate a reabrir
+
+        Retorna:
+            True  → gate reabierto
+            False → el Breaker no estaba en estado CLOSED/FORCED
+        """
+        with self._lock:
+            if self._state not in (BreakerState.CLOSED, BreakerState.FORCED):
+                log.warning(
+                    "[Breaker:%s] reopen solicitado pero estado actual es '%s'",
+                    self.name, self._state.value,
+                )
+                return False
+
+            self._open_gate(gate_name)
+
+            self._state         = BreakerState.STANDBY
+            self._gate_name     = None
+            self._trigger_event = None
+            self._trigger_op    = None
+            self._closed_at     = None
+            self._forced        = False
+
+        log.info("[Breaker:%s] gate='%s' reabierto", self.name, gate_name)
+        return True
+
+    # ══════════════════════════════════════════════════════
+    # CONTROL MANUAL — compatibilidad v2
+    # ══════════════════════════════════════════════════════
+
+    def trip(self, gate_name: str = "") -> None:
+        """
+        Cierre manual con IDs sintéticos.
+        Mantiene compatibilidad con conductor._trip_module() de v2.
+        """
+        target = gate_name or self._gate_name or "unknown"
+        self.force_close(
+            gate_name     = target,
+            trigger_event = "MANUAL",
+            trigger_op    = "MANUAL",
+        )
+
+    def reset(self) -> None:
+        """
+        Resetea el Breaker a STANDBY sin reabrir el gate.
+        Para reabrir el gate usar reopen().
+        Útil en tests y admin panel.
+        """
+        with self._lock:
+            self._state         = BreakerState.STANDBY
+            self._gate_name     = None
+            self._trigger_event = None
+            self._trigger_op    = None
+            self._closed_at     = None
+            self._forced        = False
+        log.info("[Breaker:%s] reseteado a STANDBY", self.name)
 
     @property
-    def state(self) -> BreakerState:
-        with self._lock:
-            return self._evaluate_state()
-
-    # ── Llamada protegida ──────────────────────────────────────────────────
-
-    def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+    def is_open(self) -> bool:
         """
-        Ejecuta `func(*args, **kwargs)` bajo protección del breaker.
-
-        - CLOSED    → ejecuta normalmente
-        - OPEN      → lanza BreakerOpenError sin ejecutar
-        - HALF_OPEN → ejecuta la llamada de prueba; éxito cierra, fallo reabre
+        True si el Breaker ha intervenido y el gate está cerrado.
+        Nombre heredado de v2 — semántica: ¿el circuito está cortado?
         """
         with self._lock:
-            state = self._evaluate_state()
+            return self._state in (BreakerState.CLOSED, BreakerState.FORCED)
 
-            if state == BreakerState.OPEN:
-                retry_after = self._seconds_until_half_open()
-                raise BreakerOpenError(self.name, retry_after)
-
-            if state == BreakerState.HALF_OPEN:
-                if self._half_open_calls >= self.half_open_max_calls:
-                    raise BreakerOpenError(self.name, 0.0)
-                self._half_open_calls += 1
-
-        try:
-            result = func(*args, **kwargs)
-        except Exception as exc:
-            if self._counts_as_failure(exc):
-                self._on_failure()
-            raise
-        else:
-            self._on_success()
-            return result
-
-    # ── Snapshot público ───────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════
+    # SNAPSHOT Y SERIALIZACIÓN
+    # ══════════════════════════════════════════════════════
 
     def snapshot(self) -> BreakerSnapshot:
         with self._lock:
-            state = self._evaluate_state()
-            retry = self._seconds_until_half_open() if state == BreakerState.OPEN else None
             return BreakerSnapshot(
-                name            = self.name,
-                state           = state,
-                failure_count   = self._failure_count,
-                success_count   = self._success_count,
-                last_failure_at = self._last_failure_at,
-                opened_at       = self._opened_at,
-                retry_after     = retry,
+                name          = self.name,
+                state         = self._state,
+                gate_name     = self._gate_name,
+                trigger_event = self._trigger_event,
+                trigger_op    = self._trigger_op,
+                closed_at     = self._closed_at,
+                forced        = self._forced,
             )
 
-    # ── Control manual (útil en tests y admin panel) ───────────────────────
+    def to_dict(self) -> dict:
+        s = self.snapshot()
+        return {
+            "name":          s.name,
+            "state":         s.state.value,
+            "gate_name":     s.gate_name,
+            "trigger_event": s.trigger_event,
+            "trigger_op":    s.trigger_op,
+            "closed_at":     s.closed_at,
+            "forced":        s.forced,
+        }
 
-    def reset(self) -> None:
-        """Fuerza el breaker a CLOSED y reinicia contadores."""
-        with self._lock:
-            self._transition_to_closed()
-        logger.info("breaker.reset name=%s", self.name)
+    # ══════════════════════════════════════════════════════
+    # EJECUCIÓN INTERNA
+    # ══════════════════════════════════════════════════════
 
-    def trip(self) -> None:
-        """Fuerza el breaker a OPEN manualmente (ej. mantenimiento)."""
-        with self._lock:
-            self._transition_to_open()
-        logger.warning("breaker.tripped_manually name=%s", self.name)
-
-    # ── Internals ──────────────────────────────────────────────────────────
-
-    def _evaluate_state(self) -> BreakerState:
+    def _execute_close(
+        self,
+        gate_name:     str,
+        trigger_event: str,
+        trigger_op:    str,
+        forced:        bool,
+    ) -> None:
         """
-        Debe llamarse dentro de `_lock`.
-        Promueve OPEN → HALF_OPEN si pasó el recovery_timeout.
+        Ejecuta el cierre real del gate.
+
+        Orden de operaciones:
+          1. Cerrar el gate en GateRegistry
+          2. Transicionar el evento a FINISH en EventRegistry
+             (el Conductor ya lo habrá llevado a PROCESSING antes)
+          3. Actualizar estado interno del Breaker
+          4. Loguear
+
+        Llamado por:
+          - _on_drain() → callback del Timer → forced=False
+          - force_close()                    → forced=True
         """
-        if self._state == BreakerState.OPEN:
-            if time.monotonic() - self._opened_at >= self.recovery_timeout:
-                self._transition_to_half_open()
-        return self._state
+        # 1. Cerrar el gate
+        self._close_gate(gate_name)
 
-    def _counts_as_failure(self, exc: Exception) -> bool:
-        if self.expected_exceptions is None:
-            return True
-        return isinstance(exc, self.expected_exceptions)
+        # 2. Marcar el evento como FINISH en el Registry
+        self._events.transition(trigger_event, trigger_op, EventState.FINISH)
 
-    def _on_failure(self) -> None:
+        # 3. Estado interno
         with self._lock:
-            self._failure_count   += 1
-            self._last_failure_at  = time.monotonic()
+            self._state     = BreakerState.FORCED if forced else BreakerState.CLOSED
+            self._closed_at = time.time()
+            self._forced    = forced
 
-            if self._state == BreakerState.HALF_OPEN:
-                logger.warning("breaker.half_open_failed name=%s", self.name)
-                self._transition_to_open()
+        label = "force_close" if forced else "scheduled_close"
+        log.warning(
+            "[Breaker:%s] %s — gate='%s' trigger=%s op=%s",
+            self.name, label, gate_name, trigger_event, trigger_op,
+        )
 
-            elif self._failure_count >= self.failure_threshold:
-                logger.error(
-                    "breaker.opened name=%s failures=%d",
-                    self.name, self._failure_count,
+    def _close_gate(self, gate_name: str) -> None:
+        """
+        Cierra el gate en GateRegistry.
+        Tolerante a gates no encontrados — loguea y continúa.
+        """
+        try:
+            if gate_name not in self._gates:
+                log.warning(
+                    "[Breaker:%s] gate='%s' no encontrado en GateRegistry",
+                    self.name, gate_name,
                 )
-                self._transition_to_open()
+                return
+            gate = self._gates.get(gate_name)
+            if hasattr(gate, "set_enabled"):
+                gate.set_enabled(False)
+            elif hasattr(gate, "close"):
+                gate.close()
+            else:
+                log.warning(
+                    "[Breaker:%s] gate='%s' no tiene set_enabled ni close",
+                    self.name, gate_name,
+                )
+        except Exception as e:
+            log.error(
+                "[Breaker:%s] error cerrando gate='%s': %s",
+                self.name, gate_name, e,
+            )
 
-    def _on_success(self) -> None:
-        with self._lock:
-            self._success_count += 1
+    def _open_gate(self, gate_name: str) -> None:
+        """
+        Reabre el gate en GateRegistry.
+        Llamado dentro del lock de reopen().
+        """
+        try:
+            if gate_name not in self._gates:
+                return
+            gate = self._gates.get(gate_name)
+            if hasattr(gate, "set_enabled"):
+                gate.set_enabled(True)
+            elif hasattr(gate, "open"):
+                gate.open()
+        except Exception as e:
+            log.error(
+                "[Breaker:%s] error reabriendo gate='%s': %s",
+                self.name, gate_name, e,
+            )
 
-            if self._state == BreakerState.HALF_OPEN:
-                logger.info("breaker.closed_after_recovery name=%s", self.name)
-                self._transition_to_closed()
-
-            elif self._state == BreakerState.CLOSED:
-                # Reset del contador de fallos consecutivos en cada éxito
-                self._failure_count = 0
-
-    def _transition_to_open(self) -> None:
-        self._state           = BreakerState.OPEN
-        self._opened_at       = time.monotonic()
-        self._half_open_calls = 0
-
-    def _transition_to_half_open(self) -> None:
-        self._state           = BreakerState.HALF_OPEN
-        self._half_open_calls = 0
-        logger.info("breaker.half_open name=%s", self.name)
-
-    def _transition_to_closed(self) -> None:
-        self._state         = BreakerState.CLOSED
-        self._failure_count = 0
-        self._success_count = 0
-        self._opened_at     = None
-        self._last_failure_at = None
-
-    def _seconds_until_half_open(self) -> float:
-        if self._opened_at is None:
-            return 0.0
-        elapsed = time.monotonic() - self._opened_at
-        return max(0.0, self.recovery_timeout - elapsed)
+# Alias de compatibilidad — conductor.py importa CircuitBreaker
+CircuitBreaker = BreakerBase

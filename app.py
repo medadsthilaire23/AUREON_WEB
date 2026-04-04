@@ -3,20 +3,31 @@
 # Director de la escalera de inicialización en dos fases.
 #
 # FASE 1 — Bootstrap:
-#     1. Base de datos
-#     2. Registro de blueprints (auth, lifebound, ...)
+#     1. BootGate (antes de todo)
+#     2. Base de datos
+#     3. Registro de blueprints (auth, lifebound, ...)
 #
 # FASE 2 — Wiring:
-#     3. OAuth
-#     4. Conductor + wire_auth()
-#     5. Tracer
-#     6. Alembic migrations
-#     7. db.create_all()
+#     4. OAuth
+#     5. Timer — instanciado e inyectado en Conductor
+#     6. Conductor + wire_auth() — gates concretos registrados aquí
+#     7. Tracer
+#     8. Alembic migrations
+#     9. db.create_all()
+#    10. BootGate.mark_ready()
+#
+# Cambios v3 respecto a la versión anterior:
+#   - BootGate integrado — cada paso usa boot_gate.step()
+#   - Timer instanciado en Fase 2 e inyectado en Conductor
+#   - DbGate inyectado en init_db con un event_id de arranque
+#   - Gates concretos registrados en Conductor vía conductor.register_gate()
+#   - scan_registry() disparado en after_request (fuera de rutas estáticas)
+#   - /health/full protegido en producción
 #
 # Sentry:
-#     - Inicializado antes de create_app()
-#     - _before_send_filter limpia variables sensibles
-#     - capture_exception en todos los bloques críticos del wiring
+#   - Inicializado antes de create_app()
+#   - _before_send_filter limpia variables sensibles
+#   - capture_exception en todos los bloques críticos
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
@@ -46,7 +57,6 @@ log = logging.getLogger("aureon")
 # SENTRY — antes de create_app()
 # ══════════════════════════════════════════════════════════
 
-# Variables que nunca deben salir hacia Sentry
 _SENSITIVE_KEYS = {
     "SENTRY_DSN",
     "SECRET_KEY",
@@ -59,28 +69,17 @@ _SENSITIVE_KEYS = {
 
 
 def _before_send_filter(event, hint):
-    """
-    Intercepta cada evento antes de enviarlo a Sentry.
-    Elimina variables de entorno sensibles del contexto
-    y limpia cualquier extra que las contenga.
-    """
-    # Limpiar contexto de runtime/entorno
     for ctx_key in ("runtime", "environment", "os"):
         ctx = event.get("contexts", {}).get(ctx_key, {})
         for key in _SENSITIVE_KEYS:
             ctx.pop(key, None)
-
-    # Limpiar extra
     extra = event.get("extra", {})
     for key in _SENSITIVE_KEYS:
         extra.pop(key, None)
-
-    # Limpiar request data — nunca enviar headers de autorización
     request_data = event.get("request", {})
     headers = request_data.get("headers", {})
     headers.pop("Authorization", None)
     headers.pop("Cookie", None)
-
     return event
 
 
@@ -98,14 +97,14 @@ if _sentry_dsn:
             FlaskIntegration(),
             SqlalchemyIntegration(),
             LoggingIntegration(
-                level       = logging.WARNING,   # captura WARNING+ en breadcrumbs
-                event_level = logging.ERROR,     # crea evento solo en ERROR+
+                level       = logging.WARNING,
+                event_level = logging.ERROR,
             ),
         ],
-        traces_sample_rate = 0.1,                # 10% de requests trackeadas
+        traces_sample_rate = 0.1,
         environment        = os.environ.get("FLASK_ENV", "development"),
         release            = os.environ.get("RENDER_GIT_COMMIT", "unknown"),
-        send_default_pii   = False,              # nunca enviar datos personales
+        send_default_pii   = False,
         before_send        = _before_send_filter,
     )
     log.info("  [✓] Sentry initialized (env=%s)", os.environ.get("FLASK_ENV"))
@@ -113,13 +112,7 @@ else:
     log.info("  [−] Sentry disabled (SENTRY_DSN not set)")
 
 
-# ── Helper interno — captura a Sentry con contexto de fase ────────────────
 def _sentry_capture(exc: Exception, step: str, phase: str = "wiring") -> None:
-    """
-    Captura una excepción en Sentry con tags de fase y paso.
-    No lanza — si Sentry falla, el sistema continúa su propio raise.
-    Solo actúa si el SDK está disponible y el DSN está configurado.
-    """
     if not _sentry_dsn:
         return
     try:
@@ -138,7 +131,7 @@ def _sentry_capture(exc: Exception, step: str, phase: str = "wiring") -> None:
 # ══════════════════════════════════════════════════════════
 
 def create_app():
-    from flask import Flask, render_template, jsonify
+    from flask import Flask, render_template, jsonify, request
 
     app = Flask(__name__)
 
@@ -158,29 +151,43 @@ def create_app():
 
     log.info("── Fase 1: Bootstrap ─────────────────────────")
 
+    # ── 1a. BootGate — antes de todo ──────────────────────
+    # Se instancia aquí para que los pasos de Fase 1 puedan usar step().
+    # wire_registry() y mark_ready() ocurren en Fase 2.
+    from shared.control.gates.boot_gate import BootGate
+    boot_gate = BootGate()
+
+    # ── 1b. Base de datos ─────────────────────────────────
+    # DbGate todavía no existe (se crea en wiring.py en Fase 2).
+    # init_db registrará el resultado cuando reciba db_gate en Fase 2.
+    # Aquí solo inicializamos la conexión sin trazabilidad de control.
     try:
-        from shared.db import init_db
-        init_db(app)
+        with boot_gate.step("OP010_001", "db_init"):
+            from shared.db import init_db
+            init_db(app)
         log.info("  [✓] Database initialized")
     except Exception as e:
         log.error("  [✗] Database init failed: %s", e)
         _sentry_capture(e, step="db_init", phase="bootstrap")
         raise
 
+    # ── 1c. Blueprints ────────────────────────────────────
     try:
-        from products.auth import create_auth_blueprint
-        for bp in create_auth_blueprint():
-            app.register_blueprint(bp)
-        log.info("  [✓] Auth blueprints registered: /auth + /auth/passkey + /auth/oauth + /auth/account")
+        with boot_gate.step("OP010_002", "auth_blueprints"):
+            from products.auth import create_auth_blueprint
+            for bp in create_auth_blueprint():
+                app.register_blueprint(bp)
+        log.info("  [✓] Auth blueprints registered")
     except Exception as e:
         log.error("  [✗] Auth blueprints failed: %s", e)
         _sentry_capture(e, step="auth_blueprints", phase="bootstrap")
         raise
 
     try:
-        from products.lifebound.routes import lifebound_bp
-        app.register_blueprint(lifebound_bp)
-        log.info("  [✓] Lifebound blueprint registered: /lifebound")
+        with boot_gate.step("OP010_002", "lifebound_blueprint"):
+            from products.lifebound.routes import lifebound_bp
+            app.register_blueprint(lifebound_bp)
+        log.info("  [✓] Lifebound blueprint registered")
     except Exception as e:
         log.error("  [✗] Lifebound blueprint failed: %s", e)
         _sentry_capture(e, step="lifebound_blueprint", phase="bootstrap")
@@ -192,43 +199,104 @@ def create_app():
 
     log.info("── Fase 2: Wiring ────────────────────────────")
 
-    # 2a. OAuth
+    # ── 2a. OAuth ─────────────────────────────────────────
     try:
-        from products.auth import configure_auth
-        configure_auth(app)
+        with boot_gate.step("OP010_003", "oauth"):
+            from products.auth import configure_auth
+            configure_auth(app)
         log.info("  [✓] OAuth configured")
     except Exception as e:
         log.error("  [✗] OAuth configuration failed: %s", e)
         _sentry_capture(e, step="oauth")
         # No raise — OAuth puede fallar sin tumbar el sistema
 
-    # 2b. Conductor + wire_auth
+    # ── 2b. Timer ─────────────────────────────────────────
+    # El Timer debe existir antes de wire_auth() para que
+    # el Conductor pueda recibirlo y los Breakers puedan observar colas.
     try:
-        from shared.control.conductor import conductor
-        from products.auth.wiring import wire_auth
-        wire_auth(app, conductor)
-        conductor.mark_ready()
+        with boot_gate.step("OP010_004", "timer"):
+            from shared.control.timer import Timer
+            from shared.control.registries.base import event_registry
+            timer = Timer(registry=event_registry, poll_interval_ms=500)
+            timer.start()
+        log.info("  [✓] Timer started")
+    except Exception as e:
+        log.error("  [✗] Timer failed: %s", e)
+        _sentry_capture(e, step="timer")
+        raise  # Crítico — sin Timer el Conductor no puede cerrar gates
+
+    # ── 2c. Conductor + wire_auth ─────────────────────────
+    try:
+        with boot_gate.step("OP010_004", "conductor"):
+            from shared.control.conductor import conductor
+
+            # Inyectar Timer en Conductor antes de wire_auth
+            conductor.wire_timer(timer)
+
+            from products.auth.wiring import wire_auth
+            wire_auth(app, conductor)
+
+            # Registrar los gates concretos en Conductor
+            # para que _close_gate_direct() pueda encontrarlos
+            from shared.control.registries.base import GateRegistry
+            for gate_name in ("HttpGate", "DbGate", "ModuleGate", "BootGate"):
+                if gate_name in GateRegistry:
+                    gate = GateRegistry.get(gate_name)
+                    # register_gate() espera BaseGate — los concretos son compatibles
+                    conductor._gates[gate_name] = gate
+
+            # Registrar BootGate también (todavía no está en GateRegistry)
+            conductor._gates["BootGate"] = boot_gate
+
+            conductor.mark_ready()
         log.info("  [✓] Conductor ready")
     except Exception as e:
         log.error("  [✗] Wiring failed: %s", e)
         _sentry_capture(e, step="conductor")
         raise  # Crítico
 
-    # 2c. Tracer
+    # ── 2d. wire_registry en BootGate ─────────────────────
+    # Ahora que event_registry existe y está conectado, inyectarlo en BootGate
+    # para que los pasos futuros (si los hay) queden trazados.
     try:
-        from shared.control.tracer import Tracer, register_tracer, TraceLoopError
-        tracer = Tracer(conductor)
-        register_tracer(tracer)
-        app.before_request(tracer.begin)
-        app.after_request(tracer.finish)
-        app.register_error_handler(TraceLoopError, tracer.loop_error_handler)
-        log.info("  [✓] Tracer wired (before_request / after_request / loop_error_handler)")
+        boot_gate.wire_registry(event_registry)
+        log.info("  [✓] BootGate registry wired")
+    except Exception as e:
+        log.error("  [✗] BootGate wire_registry failed: %s", e)
+        # No crítico — los pasos de arranque ya completaron
+
+    # ── 2e. Tracer ────────────────────────────────────────
+    try:
+        with boot_gate.step("OP010_005", "tracer"):
+            from shared.control.tracer import Tracer, register_tracer, TraceLoopError
+            tracer = Tracer(conductor)
+            register_tracer(tracer)
+            app.before_request(tracer.begin)
+            app.after_request(tracer.finish)
+            app.register_error_handler(TraceLoopError, tracer.loop_error_handler)
+        log.info("  [✓] Tracer wired")
     except Exception as e:
         log.error("  [✗] Tracer wiring failed: %s", e)
         _sentry_capture(e, step="tracer")
         raise  # Crítico
 
-    # 2d. Alembic migrations
+    # ── 2f. scan_registry en after_request ────────────────
+    # El Conductor necesita procesar los FAILEDs después de cada request.
+    # Solo en rutas de negocio — excluir static, health, favicon.
+    _SKIP_SCAN_PREFIXES = ("/static/", "/health", "/favicon")
+
+    @app.after_request
+    def _scan_control_registry(response):
+        try:
+            if not any(request.path.startswith(p) for p in _SKIP_SCAN_PREFIXES):
+                conductor.scan_registry()
+        except Exception as e:
+            log.error("[app] scan_registry error: %s", e)
+        return response
+
+    log.info("  [✓] scan_registry registrado en after_request")
+
+    # ── 2g. Alembic migrations ────────────────────────────
     try:
         from alembic.config import Config as AlembicConfig
         from alembic import command as alembic_command
@@ -244,18 +312,27 @@ def create_app():
         _sentry_capture(e, step="alembic")
         # No raise — db.create_all actúa como fallback
 
-    # 2e. Crear / verificar tablas
+    # ── 2h. Crear / verificar tablas ──────────────────────
     try:
         with app.app_context():
             from shared.db import db
             db.create_all()
-            log.info("  [✓] Tables verified/created")
+        log.info("  [✓] Tables verified/created")
     except Exception as e:
         log.error("  [✗] db.create_all failed: %s", e)
         _sentry_capture(e, step="db_create_all")
         raise  # Crítico
 
-    # 2f. Rutas registradas (solo en desarrollo)
+    # ── 2i. BootGate.mark_ready() ─────────────────────────
+    # Solo abre si todos los pasos completaron sin error.
+    # Si algo falló, el gate queda CLOSED y el sistema no está listo.
+    boot_gate.mark_ready()
+    if boot_gate.is_ready:
+        log.info("  [✓] BootGate OPEN — sistema listo")
+    else:
+        log.error("  [✗] BootGate no pudo abrir — hay pasos fallidos")
+
+    # ── Rutas registradas (solo en desarrollo) ────────────
     if not _is_production:
         with app.app_context():
             for rule in app.url_map.iter_rules():
@@ -300,24 +377,27 @@ def create_app():
 
     @app.route("/health")
     def health():
-        """
-        Endpoint público mínimo para Render y UptimeRobot.
-        Solo confirma que el sistema está vivo — sin datos internos.
-        """
+        """Endpoint público mínimo para Render y UptimeRobot."""
         return jsonify({"status": "ok"}), 200
 
     @app.route("/health/full")
     def health_full():
         """
-        Endpoint completo con estado del conductor y tracer.
-        Proteger con @require_admin antes de ir a producción.
+        Estado interno del sistema de control.
+        Protegido en producción — requiere header interno.
         """
-        from shared.control.conductor import conductor
-        import shared.control.tracer as _tracer_mod
+        if _is_production:
+            internal_token = os.environ.get("HEALTH_TOKEN", "")
+            provided_token = request.headers.get("X-Health-Token", "")
+            if not internal_token or provided_token != internal_token:
+                return jsonify({"error": "Forbidden"}), 403
 
+        import shared.control.tracer as _tracer_mod
         payload = {
             "status":    "ok",
+            "boot_gate": boot_gate.snapshot(),
             "conductor": conductor.all_snapshots(),
+            "timer":     timer.snapshot(),
         }
         if _tracer_mod._tracer_instance is not None:
             payload["tracer"] = _tracer_mod._tracer_instance.snapshot()

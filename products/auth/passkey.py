@@ -1,18 +1,13 @@
 """
 products/auth/passkey.py
 ========================
-WebAuthn — registro y autenticación de passkeys (Face ID, huella, PIN).
+WebAuthn — registro y autenticación de passkeys.
 
-Flujo de registro (2 pasos):
-    1. GET  /auth/passkey/register/begin    → opciones para el navegador
-    2. POST /auth/passkey/register/complete → verificar y guardar credencial
-
-Flujo de login (2 pasos):
-    1. POST /auth/passkey/login/begin       → challenge para el navegador
-    2. POST /auth/passkey/login/complete    → verificar firma y crear sesión
-
-Dependencia:
-    pip install webauthn==2.1.0
+v3 — ModuleGate checkpoints en:
+     - generate_registration_options  → OP005_001_002
+     - verify_registration_response   → OP005_002_001
+     - generate_authentication_options → OP006_001
+     - verify_authentication_response  → OP006_002_002
 """
 
 import os
@@ -27,7 +22,7 @@ from webauthn.helpers.structs import (
     ResidentKeyRequirement,
     PublicKeyCredentialDescriptor,
 )
-from flask import Blueprint, jsonify, request, g, session
+from flask import Blueprint, g, jsonify, request, session
 
 from shared.db import db
 from shared.auth_middleware import require_auth
@@ -41,14 +36,46 @@ log = logging.getLogger("aureon.passkey")
 
 passkey_bp = Blueprint("passkey", __name__, url_prefix="/auth/passkey")
 
-# ── Configuración WebAuthn ─────────────────────────────────
-RP_ID  = os.environ.get("WEBAUTHN_RP_ID",   "localhost")
-RP_NAME= os.environ.get("WEBAUTHN_RP_NAME", "Aureon")
-ORIGIN = os.environ.get("WEBAUTHN_ORIGIN",  "http://localhost:10000")
+RP_ID   = os.environ.get("WEBAUTHN_RP_ID",   "localhost")
+RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "Aureon")
+ORIGIN  = os.environ.get("WEBAUTHN_ORIGIN",  "http://localhost:10000")
+
+# ModuleGate — inyectado en Fase 2 desde wiring.py
+_module_gate = None
+
+
+def set_module_gate(gate) -> None:
+    """Llamado desde wiring.py en Fase 2."""
+    global _module_gate
+    _module_gate = gate
+
+
+# ── Helpers de gate ────────────────────────────────────────────────────────
+
+def _event_id() -> str | None:
+    try:
+        return getattr(g, "event_id", None)
+    except RuntimeError:
+        return None
+
+
+def _gate_pending(op_id: str) -> None:
+    if _module_gate and _event_id():
+        _module_gate.record_pending(_event_id(), op_id)
+
+
+def _gate_ok(op_id: str) -> None:
+    if _module_gate and _event_id():
+        _module_gate.record_ok(_event_id(), op_id)
+
+
+def _gate_fail(op_id: str, error: str) -> None:
+    if _module_gate and _event_id():
+        _module_gate.record_fail(_event_id(), op_id, error=error)
 
 
 # ══════════════════════════════════════════════════════════
-# REGISTRO — paso 1: generar opciones
+# REGISTRO — paso 1: generar opciones        OP005_001_002
 # ══════════════════════════════════════════════════════════
 
 @passkey_bp.route("/register/begin", methods=["GET"])
@@ -63,28 +90,34 @@ def register_begin():
         for pk in user.passkeys
     ]
 
-    options = webauthn.generate_registration_options(
-        rp_id=RP_ID,
-        rp_name=RP_NAME,
-        user_id=user.id.encode(),
-        user_name=user.email,
-        user_display_name=user.name,
-        exclude_credentials=existing_credentials,
-        authenticator_selection=AuthenticatorSelectionCriteria(
-            user_verification=UserVerificationRequirement.REQUIRED,
-            resident_key=ResidentKeyRequirement.PREFERRED,
-        ),
-    )
+    try:
+        _gate_pending("OP005_001_002")
+        options = webauthn.generate_registration_options(
+            rp_id=RP_ID,
+            rp_name=RP_NAME,
+            user_id=user.id.encode(),
+            user_name=user.email,
+            user_display_name=user.name,
+            exclude_credentials=existing_credentials,
+            authenticator_selection=AuthenticatorSelectionCriteria(
+                user_verification=UserVerificationRequirement.REQUIRED,
+                resident_key=ResidentKeyRequirement.PREFERRED,
+            ),
+        )
+        _gate_ok("OP005_001_002")
+    except Exception as e:
+        log.error("Passkey register_begin error: %s", e)
+        _gate_fail("OP005_001_002", str(e))
+        return jsonify({"error": "Error generando opciones de registro"}), 500
 
     session["passkey_register_challenge"] = webauthn.helpers.bytes_to_base64url(
         options.challenge
     )
-
     return jsonify(json.loads(webauthn.options_to_json(options))), 200
 
 
 # ══════════════════════════════════════════════════════════
-# REGISTRO — paso 2: verificar y guardar
+# REGISTRO — paso 2: verificar y guardar     OP005_002_001
 # ══════════════════════════════════════════════════════════
 
 @passkey_bp.route("/register/complete", methods=["POST"])
@@ -103,6 +136,7 @@ def register_complete():
         return jsonify({"error": "Body JSON requerido"}), 400
 
     try:
+        _gate_pending("OP005_002_001")
         verification = webauthn.verify_registration_response(
             credential=body,
             expected_challenge=webauthn.helpers.base64url_to_bytes(challenge_b64),
@@ -110,11 +144,12 @@ def register_complete():
             expected_origin=ORIGIN,
             require_user_verification=True,
         )
+        _gate_ok("OP005_002_001")
     except Exception as e:
         log.warning("Passkey register failed: user=%s error=%s", g.user_id, e)
+        _gate_fail("OP005_002_001", str(e))
         return jsonify({"error": f"Verificación fallida: {str(e)}"}), 400
 
-    # Asociar dispositivo si existe
     device_info = parse_device(request)
     device = None
     if device_info.get("fingerprint"):
@@ -139,7 +174,7 @@ def register_complete():
 
 
 # ══════════════════════════════════════════════════════════
-# LOGIN — paso 1: generar challenge
+# LOGIN — paso 1: generar challenge           OP006_001
 # ══════════════════════════════════════════════════════════
 
 @passkey_bp.route("/login/begin", methods=["POST"])
@@ -158,11 +193,18 @@ def login_begin():
                 for pk in user.passkeys
             ]
 
-    options = webauthn.generate_authentication_options(
-        rp_id=RP_ID,
-        allow_credentials=allow_credentials,
-        user_verification=UserVerificationRequirement.REQUIRED,
-    )
+    try:
+        _gate_pending("OP006_001")
+        options = webauthn.generate_authentication_options(
+            rp_id=RP_ID,
+            allow_credentials=allow_credentials,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        )
+        _gate_ok("OP006_001")
+    except Exception as e:
+        log.error("Passkey login_begin error: %s", e)
+        _gate_fail("OP006_001", str(e))
+        return jsonify({"error": "Error generando challenge"}), 500
 
     session["passkey_login_challenge"] = webauthn.helpers.bytes_to_base64url(options.challenge)
     if email:
@@ -172,7 +214,7 @@ def login_begin():
 
 
 # ══════════════════════════════════════════════════════════
-# LOGIN — paso 2: verificar firma y crear sesión
+# LOGIN — paso 2: verificar firma            OP006_002_002
 # ══════════════════════════════════════════════════════════
 
 @passkey_bp.route("/login/complete", methods=["POST"])
@@ -197,6 +239,7 @@ def login_complete():
         return jsonify({"error": "Usuario inactivo"}), 401
 
     try:
+        _gate_pending("OP006_002_002")
         verification = webauthn.verify_authentication_response(
             credential=body,
             expected_challenge=webauthn.helpers.base64url_to_bytes(challenge_b64),
@@ -206,15 +249,15 @@ def login_complete():
             credential_current_sign_count=passkey.sign_count,
             require_user_verification=True,
         )
+        _gate_ok("OP006_002_002")
     except Exception as e:
         log.warning("Passkey login failed: user=%s error=%s", passkey.user_id, e)
+        _gate_fail("OP006_002_002", str(e))
         return jsonify({"error": f"Verificación fallida: {str(e)}"}), 401
 
-    # Actualizar sign_count anti-replay
     passkey.sign_count   = verification.new_sign_count
     passkey.last_used_at = datetime.now(timezone.utc)
 
-    # Crear sesión
     device_info = parse_device(request)
     device = None
     if device_info.get("fingerprint"):
@@ -262,10 +305,7 @@ def login_complete():
 @passkey_bp.route("/<passkey_id>", methods=["DELETE"])
 @require_auth
 def delete_passkey(passkey_id):
-    passkey = UserPasskey.query.filter_by(
-        id=passkey_id, user_id=g.user_id
-    ).first()
-
+    passkey = UserPasskey.query.filter_by(id=passkey_id, user_id=g.user_id).first()
     if not passkey:
         return jsonify({"error": "Passkey no encontrada"}), 404
 

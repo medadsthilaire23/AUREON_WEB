@@ -27,20 +27,39 @@ import os
 from flask import Blueprint, jsonify, request, send_file
 from io import BytesIO
 
-from modules.template_manager import TemplateManager
-from modules.pattern_service import PatternService
-from services.pattern_generator import PatternGenerator
+# ── Imports absolutos (compatibles con Render y cualquier WSGI) ───────────
+from products.lifebound.modules.template_manager   import TemplateManager
+from products.lifebound.modules.pattern_service    import PatternService
+from products.lifebound.services.pattern_generator import PatternGenerator
 
-# Sub-blueprints de cada endpoint de negocio
-from api.session   import session_bp
-from api.pattern   import pattern_bp
-from api.slots     import slots_bp
-from api.transform import transform_bp
-from api.generate  import generate_bp
+from products.lifebound.api.session   import session_bp
+from products.lifebound.api.pattern   import pattern_bp
+from products.lifebound.api.slots     import slots_bp
+from products.lifebound.api.transform import transform_bp
+from products.lifebound.api.generate  import generate_bp
 
 log = logging.getLogger("lifebound")
 
 _LIFEBOUND_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+# ── Helper: protección ADMIN_TOKEN ────────────────────────────────────────
+
+def _check_admin_token() -> bool:
+    """
+    Verifica el ADMIN_TOKEN via X-Admin-Token header o ?token= query param.
+    Si la variable de entorno no está configurada, bloquea siempre.
+    """
+    admin_token = os.environ.get("ADMIN_TOKEN", "")
+    if not admin_token:
+        return False
+    incoming = (
+        request.headers.get("X-Admin-Token")
+        or request.args.get("token")
+        or ""
+    )
+    return incoming == admin_token
+
 
 # ── Blueprint principal ────────────────────────────────────────────────────
 lifebound_bp = Blueprint(
@@ -53,14 +72,13 @@ lifebound_bp = Blueprint(
 )
 
 # ── Registrar sub-blueprints ───────────────────────────────────────────────
-# Cada uno trae sus propias rutas bajo /lifebound/api/*
 lifebound_bp.register_blueprint(session_bp)
 lifebound_bp.register_blueprint(pattern_bp)
 lifebound_bp.register_blueprint(slots_bp)
 lifebound_bp.register_blueprint(transform_bp)
 lifebound_bp.register_blueprint(generate_bp)
 
-# ── Servicios compartidos (solo los que usan rutas de este archivo) ────────
+# ── Servicios compartidos ──────────────────────────────────────────────────
 _template_manager = TemplateManager()
 _pattern_service  = PatternService()
 
@@ -75,8 +93,12 @@ log.info("Lifebound: %d templates loaded", len(_template_manager.get_template_li
 def index():
     """Sirve el frontend HTML de Lifebound."""
     html_path = os.path.join(_LIFEBOUND_DIR, "index.html")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return f.read(), 200, {"Content-Type": "text/html"}
+    try:
+        with open(html_path, "r", encoding="utf-8") as f:
+            return f.read(), 200, {"Content-Type": "text/html"}
+    except FileNotFoundError:
+        log.error("index.html no encontrado en %s", html_path)
+        return "Frontend no disponible", 503
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -117,7 +139,6 @@ def list_templates():
 def preview_page():
     """
     Genera una página PDF de muestra para una plantilla específica.
-    Útil para el editor visual del frontend sin necesidad de fotos reales.
 
     Body JSON esperado
     ------------------
@@ -129,10 +150,11 @@ def preview_page():
     Respuesta
     ---------
     200 — application/pdf con la página generada
-    400 — template_id ausente
+    400 — template_id ausente o body inválido
+    404 — template_id no encontrado
     500 — Error al generar la página
     """
-    body = request.get_json()
+    body = request.get_json(silent=True)
     if not body:
         return jsonify({"error": "Body JSON requerido"}), 400
 
@@ -141,27 +163,39 @@ def preview_page():
         return jsonify({"error": "Campo 'template_id' requerido"}), 400
 
     try:
-        data      = body.get("data", {})
-        template  = _template_manager.get_template_instance(template_id)
+        data     = body.get("data", {})
+        template = _template_manager.get_template_instance(template_id)
+
+        if template is None:
+            return jsonify({"error": f"Template '{template_id}' no encontrado"}), 404
+
         pdf_bytes = template.generate(data)
-        return send_file(BytesIO(pdf_bytes), mimetype="application/pdf")
+
+        if not pdf_bytes:
+            return jsonify({"error": "El template no generó contenido"}), 500
+
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            download_name=f"preview_{template_id}.pdf",
+        )
+    except KeyError as e:
+        log.error("Template '%s' no encontrado: %s", template_id, e)
+        return jsonify({"error": f"Template '{template_id}' no encontrado"}), 404
     except Exception as e:
         log.exception("Error generando preview para '%s'", template_id)
         return jsonify({"error": str(e)}), 500
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# API — CATALOG STATS  (solo admin/debug)
+# API — CATALOG STATS  (solo admin)
 # ══════════════════════════════════════════════════════════════════════════
 
 @lifebound_bp.route("/api/catalog/stats", methods=["GET"])
 def catalog_stats():
     """
     Devuelve estadísticas del catálogo de patrones cargado en memoria.
-    Útil para verificar en producción que los JSONs se cargaron correctamente.
-
-    No requiere autenticación pero no expone datos sensibles —
-    solo metadatos de configuración.
+    Protegido con ADMIN_TOKEN.
 
     Respuesta JSON
     --------------
@@ -169,7 +203,16 @@ def catalog_stats():
         "templates_loaded": 12,
         "photo_range":      [15, 80],
     }
+
+    Códigos HTTP
+    ------------
+    200 — OK
+    403 — No autorizado
+    500 — Error interno
     """
+    if not _check_admin_token():
+        return jsonify({"error": "No autorizado"}), 403
+
     try:
         templates = _template_manager.get_template_list()
         return jsonify({
@@ -189,10 +232,7 @@ def catalog_stats():
 def regenerate_patterns():
     """
     Regenera los tres archivos de patrones pregenerados en data/.
-
-    Llama al mismo generador que se usa offline, pero desde el servidor
-    en runtime. Útil cuando se actualiza pattern_config.json en producción
-    sin necesidad de hacer un redeploy ni acceder al servidor por SSH.
+    Protegido con ADMIN_TOKEN.
 
     Body JSON opcional
     ------------------
@@ -217,14 +257,12 @@ def regenerate_patterns():
     ------------
     200 — Regeneración exitosa
     400 — patterns_per_count inválido
+    403 — No autorizado
     500 — Error durante la generación
-
-    Nota de seguridad
-    -----------------
-    Este endpoint no requiere autenticación en esta versión.
-    Si el servidor es público, protegerlo con un header secreto
-    o restringirlo por IP antes de exponerlo en producción.
     """
+    if not _check_admin_token():
+        return jsonify({"error": "No autorizado"}), 403
+
     body               = request.get_json(silent=True) or {}
     patterns_per_count = body.get("patterns_per_count")
 
@@ -242,9 +280,10 @@ def regenerate_patterns():
         log.info("Cache de PatternService invalidado")
 
         return jsonify(result), 200
+
     except FileNotFoundError as e:
         log.error("pattern_config.json no encontrado: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Archivo de configuración no encontrado: {e}"}), 500
     except Exception as e:
         log.exception("Error regenerando patrones")
         return jsonify({"error": str(e)}), 500

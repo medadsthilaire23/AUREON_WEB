@@ -123,47 +123,100 @@ def devices_page():
 # CONTROL — inspección del subsistema en vivo
 # ══════════════════════════════════════════════════════════
 
+def _snap_to_dict(snap) -> dict:
+    """
+    Convierte un snapshot a dict de forma segura.
+    Acepta tanto objetos con atributos como dicts planos.
+    """
+    if isinstance(snap, dict):
+        return snap
+    if hasattr(snap, "to_dict"):
+        return snap.to_dict()
+    return vars(snap)
+
+
+def _check_admin_token() -> bool:
+    """
+    Verifica el ADMIN_TOKEN via X-Admin-Token header o ?token= query param.
+    Si la variable de entorno no está configurada, bloquea siempre.
+    """
+    admin_token = os.environ.get("ADMIN_TOKEN", "")
+    if not admin_token:
+        return False
+    incoming = (
+        request.headers.get("X-Admin-Token")
+        or request.args.get("token")
+        or ""
+    )
+    return incoming == admin_token
+
+
 @auth_bp.get("/control/status")
 def control_status():
     """
     Estado en vivo del subsistema de control (breakers + gates).
-    Proteger con @require_admin antes de ir a producción.
+    Protegido con ADMIN_TOKEN via X-Admin-Token header o ?token= query param.
     """
+    if not _check_admin_token():
+        return jsonify({"error": "No autorizado"}), 403
+
     from shared.control.registries.base import BreakerRegistry, GateRegistry
     from products.auth.context import auth_context
 
-    breakers = [
-        {
-            "name":        snap.name,
-            "state":       snap.state.value,
-            "failures":    snap.failure_count,
-            "successes":   snap.success_count,
-            "retry_after": round(snap.retry_after, 1) if snap.retry_after else None,
-            "opened_at":   snap.opened_at,
-        }
-        for snap in BreakerRegistry.all_snapshots()
-    ]
+    # ── Breakers ──────────────────────────────────────────
+    breakers = []
+    for snap in BreakerRegistry.all_snapshots():
+        s = _snap_to_dict(snap)
+        breakers.append({
+            "name":        s.get("name"),
+            "state":       s.get("state").value if hasattr(s.get("state"), "value") else s.get("state"),
+            "failures":    s.get("failure_count", s.get("failures")),
+            "successes":   s.get("success_count", s.get("successes")),
+            "retry_after": round(s["retry_after"], 1) if s.get("retry_after") else None,
+            "opened_at":   s.get("opened_at"),
+        })
 
-    gates = [
-        {
-            "name":    snap.name,
-            "enabled": snap.enabled,
-        }
-        for snap in GateRegistry.all_snapshots()
-    ]
+    # ── Gates ─────────────────────────────────────────────
+    gates = []
+    for snap in GateRegistry.all_snapshots():
+        s = _snap_to_dict(snap)
+        gates.append({
+            "name":    s.get("name"),
+            "enabled": s.get("enabled"),
+        })
 
+    # ── Conductor — captura el error real para diagnóstico ────────────────
     conductor_status = None
     if auth_context.conductor:
         try:
             conductor_status = auth_context.conductor.status()
-        except Exception:
-            conductor_status = {"error": "No disponible"}
+        except Exception as e:
+            # Loguea el traceback completo en el servidor
+            log.exception("[control/status] conductor.status() falló")
+            # Devuelve el error real al cliente admin para diagnóstico
+            conductor_status = {
+                "error": str(e),
+                "type":  type(e).__name__,
+            }
+
+    # ── Sesiones activas ──────────────────────────────────
+    try:
+        active_sessions = UserSession.query.filter_by(revoked_at=None).count()
+        active_users    = db.session.query(UserSession.user_id)\
+                            .filter_by(revoked_at=None)\
+                            .distinct().count()
+    except Exception as e:
+        log.exception("[control/status] error consultando sesiones")
+        active_sessions = None
+        active_users    = None
 
     return jsonify({
-        "breakers":  breakers,
-        "gates":     gates,
-        "conductor": conductor_status,
-        "context":   auth_context.snapshot(),
+        "breakers":        breakers,
+        "gates":           gates,
+        "conductor":       conductor_status,
+        "context":         auth_context.snapshot(),
+        "active_sessions": active_sessions,
+        "active_users":    active_users,
     }), 200
 
 
@@ -303,8 +356,8 @@ def refresh():
     if not user or not user.is_active:
         return jsonify({"error": "Usuario inactivo"}), 401
 
-    new_access         = create_access_token(user.id, sess.id)
-    sess.token_hash    = hash_token(new_access)
+    new_access          = create_access_token(user.id, sess.id)
+    sess.token_hash     = hash_token(new_access)
     sess.last_active_at = datetime.now(timezone.utc)
     db.session.commit()
 

@@ -2,6 +2,8 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # Middleware desacoplado (sin imports de products).
 # Dependencias se inyectan en Fase 2 desde wiring.py.
+#
+# v3 — añadido HttpGate checkpoint en before_request.
 # ══════════════════════════════════════════════════════════════════════════════
 
 import logging
@@ -22,6 +24,7 @@ _UserSession  = None
 _User         = None
 _db           = None
 _conductor    = None
+_http_gate    = None   # ← v3: HttpGate inyectado en Fase 2
 _wired        = False
 
 
@@ -31,16 +34,15 @@ def configure_auth_middleware(
     user_session_model,
     user_model,
     db_instance,
-    conductor=None,       # ← opcional — no rompe llamadas sin él
+    conductor  = None,
+    http_gate  = None,   # ← v3: opcional — sin él el middleware funciona igual
 ):
     """
     Fase 2 — Wiring.
     Llamar desde wiring.py después de registrar todos los blueprints.
-
-    conductor es opcional — si se inyecta, permite que el middleware
-    reporte fallos de sesión al subsistema de control en el futuro.
     """
-    global _decode_token, _hash_token, _UserSession, _User, _db, _conductor, _wired
+    global _decode_token, _hash_token, _UserSession, _User, _db
+    global _conductor, _http_gate, _wired
 
     _decode_token = decode_token
     _hash_token   = hash_token
@@ -48,6 +50,7 @@ def configure_auth_middleware(
     _User         = user_model
     _db           = db_instance
     _conductor    = conductor
+    _http_gate    = http_gate
     _wired        = True
 
     log.info("auth_middleware wired correctamente")
@@ -59,6 +62,54 @@ def _check_configured():
             "auth_middleware no está configurado. "
             "Llama configure_auth_middleware() en wiring.py (Fase 2)."
         )
+
+
+# ══════════════════════════════════════════════════════════
+# BEFORE REQUEST — HttpGate checkpoint (v3)
+# ══════════════════════════════════════════════════════════
+
+def register_http_gate(app) -> None:
+    """
+    Registra el checkpoint del HttpGate en before_request.
+    Llamar desde wiring.py después de configure_auth_middleware().
+
+    El HttpGate:
+      1. Genera el event_id de la request (timestamp compacto)
+      2. Registra OP001 (o la raíz de la operación HTTP) en EventRegistry
+      3. Si el gate está CLOSED, bloquea la request con 503
+
+    El event_id queda en g.event_id — disponible para el resto
+    de la cadena (DbGate, ModuleGate).
+    """
+    @app.before_request
+    def _http_gate_checkpoint():
+        if _http_gate is None:
+            return None   # sin gate inyectado — fail-open
+
+        try:
+            result = _http_gate.scan(request)
+
+            # El gate asigna el event_id y lo deja en g
+            g.event_id = getattr(result, "event_id", None)
+
+            # Si el gate está CLOSED, bloquea la request
+            if not result.allowed:
+                log.warning(
+                    "[HttpGate] request bloqueada — op=%s event=%s",
+                    getattr(result, "op_id", "?"),
+                    g.event_id,
+                )
+                return jsonify({
+                    "error":   "Sistema temporalmente no disponible",
+                    "code":    "HTTP_GATE_CLOSED",
+                    "event_id": g.event_id,
+                }), 503
+
+        except Exception as e:
+            # El gate nunca debe romper la request — fail-open
+            log.error("[HttpGate] error en checkpoint: %s", e)
+
+        return None
 
 
 # ══════════════════════════════════════════════════════════

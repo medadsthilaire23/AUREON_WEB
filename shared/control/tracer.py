@@ -1,46 +1,29 @@
 # shared/control/tracer.py
 # ══════════════════════════════════════════════════════════════════════════════
-# Trace ID con detección de ciclos — AUREON Shared Control
+# Tracer — AUREON Sistema de Control v3.0
 #
-# Formato del ID
-# ──────────────
-#     Sin parent:   req_7f3a
-#     Con parent:   req_7f3a.cb_4d1e
-#     Con hops:     req_7f3a:oam1-rou2-mw3
+# Cambios respecto a versión anterior:
+#   - trace_id unificado con event_id del HttpGate
+#     g._trace.trace_id == g.event_id — un solo ID por request
+#   - Si HttpGate no generó event_id (ruta sin scan), genera uno propio
+#     con el mismo formato (YYYYMMDDHHMMSSMMM) para consistencia
+#   - X-Trace-ID en respuesta expone el event_id — trazabilidad end-to-end
+#   - _new_id eliminado — ya no genera IDs propios en formato req_XXXX
+#   - Parent tracking via X-Trace-ID conservado para flujos OAuth multi-step
 #
-# Detección de ciclos
-# ───────────────────
-#     Si un módulo aparece dos veces en el mismo trace → TraceLoopError.
-#     El Conductor recibe una Alert(REQUEST / RUNTIME / INTERNAL).
-#     El errorhandler global de app.py devuelve 508 Loop Detected.
+# Formato del ID (heredado de event_id.py):
+#   20260404143022847            — request directa
+#   20260404143022847.cb_4d1e   — callback OAuth (hijo de un event_id padre)
 #
-# Integración — Fase 2 (app.py)
-# ──────────────────────────────
-#     from shared.control.tracer import Tracer, register_tracer
-#     tracer = Tracer(conductor)
-#     register_tracer(tracer)
-#     app.before_request(tracer.begin)
-#     app.after_request(tracer.finish)
-#     app.register_error_handler(TraceLoopError, tracer.loop_error_handler)
+# Detección de ciclos sin cambios.
 #
-# Uso desde cualquier módulo
-# ──────────────────────────
-#     from shared.control.tracer import checkpoint
-#     checkpoint("oam")   # oauth_middleware
-#     checkpoint("rou")   # routes
-#     checkpoint("cbk")   # oauth callback
-#     checkpoint("mw")    # auth_middleware
-#     checkpoint("db")    # capa de base de datos
-#
-# Regla arquitectónica
-# ────────────────────
-#     Este módulo NO importa nada de products/.
+# Regla arquitectónica:
+#   Este módulo NO importa nada de products/.
 # ══════════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
 
 import logging
-import secrets
 import threading
 import time
 from dataclasses import dataclass, field
@@ -48,7 +31,8 @@ from typing import Optional
 
 from flask import g, jsonify, request as flask_request
 
-from shared.control.alert import Alert, Impact, Recovery, Origin
+from shared.control.alert    import Alert, Impact, Recovery, Origin
+from shared.control.event_id import generate_event_id
 
 log = logging.getLogger("aureon.tracer")
 
@@ -80,8 +64,8 @@ class TraceLoopError(RuntimeError):
 class TraceRecord:
     trace_id:   str
     parent_id:  Optional[str]
-    path:       tuple[str, ...]     # ("oam1", "rou2", "mw3")
-    started_at: float               # perf_counter
+    path:       tuple[str, ...]
+    started_at: float
     ended_at:   float
     had_loop:   bool
     http_path:  str
@@ -113,15 +97,11 @@ class _ActiveTrace:
     parent_id:  Optional[str]
     started_at: float
     step:       int       = 0
-    hops:       list[str] = field(default_factory=list)   # ["oam1", "rou2"]
-    visited:    set[str]  = field(default_factory=set)    # {"oam", "rou"}
+    hops:       list[str] = field(default_factory=list)
+    visited:    set[str]  = field(default_factory=set)
     had_loop:   bool      = False
 
     def next_hop(self, module_key: str) -> str:
-        """
-        Registra el módulo y devuelve el hop formateado.
-        Lanza TraceLoopError si el módulo ya fue visitado.
-        """
         if module_key in self.visited:
             raise TraceLoopError(self.trace_id, module_key, list(self.hops))
         self.step += 1
@@ -145,11 +125,18 @@ class Tracer:
     """
     Instancia única creada en Fase 2 (app.py).
 
-    Recibe el conductor directamente — usa conductor.receive(alert)
-    en lugar de un handler genérico, igual que el resto del sistema.
+    El trace_id es el event_id generado por HttpGate.scan() en before_request.
+    Si HttpGate no lo generó (ruta sin scan, health, static), genera uno propio
+    con el mismo formato para mantener consistencia en los logs.
+
+    Flujo por request:
+        HttpGate.scan()  → g.event_id = "20260404143022847"
+        Tracer.begin()   → g._trace.trace_id = g.event_id  (mismo ID)
+        checkpoint("mw") → g._trace.hops = ["mw1"]
+        Tracer.finish()  → X-Trace-ID: 20260404143022847:mw1
     """
 
-    MAX_HISTORY = 200   # ring buffer de traces completados
+    MAX_HISTORY = 200
 
     def __init__(self, conductor) -> None:
         self._conductor = conductor
@@ -163,11 +150,25 @@ class Tracer:
     def begin(self) -> None:
         """
         before_request — inicializa el trace en flask.g.
-        Si la request trae X-Trace-ID lo usa como parent_id
-        para correlacionar flujos multi-request (OAuth, etc.).
+
+        Reutiliza g.event_id si HttpGate ya lo generó.
+        Si no existe (ruta sin scan, estática, health), genera uno propio
+        con generate_event_id() para mantener el mismo formato.
+
+        X-Trace-ID entrante se usa como parent_id para flujos OAuth
+        multi-request (redirect → callback).
         """
+        # event_id generado por HttpGate.scan() en before_request anterior
+        event_id  = getattr(g, "event_id", None) or generate_event_id()
         parent_id = flask_request.headers.get("X-Trace-ID")
-        trace_id  = self._new_id(parent_id)
+
+        # En flujos OAuth el parent_id es el event_id de la request original
+        # (el que inició el redirect). Se preserva para correlación.
+        if parent_id:
+            # Formato: <parent_event_id>.cb_<sufijo_corto_del_actual>
+            trace_id = f"{parent_id}.cb_{event_id[-4:]}"
+        else:
+            trace_id = event_id
 
         g._trace = _ActiveTrace(
             trace_id   = trace_id,
@@ -175,8 +176,14 @@ class Tracer:
             started_at = time.perf_counter(),
         )
 
-        log.debug("[Tracer] begin  trace=%s  parent=%s  path=%s",
-                  trace_id, parent_id, flask_request.path)
+        # Sincronizar g.event_id con el trace_id final
+        # para que el resto de la cadena use el mismo valor
+        g.event_id = trace_id
+
+        log.debug(
+            "[Tracer] begin  trace=%s  parent=%s  path=%s",
+            trace_id, parent_id, flask_request.path,
+        )
 
     def finish(self, response):
         """
@@ -216,13 +223,11 @@ class Tracer:
         return response
 
     def loop_error_handler(self, exc: TraceLoopError):
-        """
-        Errorhandler global para TraceLoopError.
-        Registrar en app.py:
-            app.register_error_handler(TraceLoopError, tracer.loop_error_handler)
-        """
-        log.error("[Tracer] 508  trace=%s  module=%s  path=%s",
-                  exc.trace_id, exc.module_key, exc.path)
+        """Errorhandler global para TraceLoopError → 508."""
+        log.error(
+            "[Tracer] 508  trace=%s  module=%s  path=%s",
+            exc.trace_id, exc.module_key, exc.path,
+        )
         return jsonify({
             "error":    "Loop detectado — request cancelada",
             "trace_id": exc.trace_id,
@@ -231,22 +236,18 @@ class Tracer:
         }), 508
 
     # ══════════════════════════════════════════════════════
-    # CHECKPOINT — registrar un módulo en el trace activo
+    # CHECKPOINT
     # ══════════════════════════════════════════════════════
 
     def checkpoint(self, module_key: str) -> str:
         """
         Registra que `module_key` está siendo visitado en este trace.
-        Devuelve el hop formateado ("oam1", "rou2", ...).
+        Devuelve el hop formateado ("mw1", "rou2", ...).
 
-        Si detecta loop:
-            1. Emite Alert al Conductor (REQUEST / RUNTIME / INTERNAL)
-            2. Lanza TraceLoopError → capturada por loop_error_handler → 508
-
-        Claves de módulo estándar:
+        Claves estándar:
             "mw"   auth_middleware
             "oam"  oauth_middleware
-            "rou"  routes principales
+            "rou"  routes
             "cbk"  oauth callback
             "psk"  passkey
             "db"   capa de base de datos
@@ -254,7 +255,6 @@ class Tracer:
         """
         trace: Optional[_ActiveTrace] = getattr(g, "_trace", None)
         if trace is None:
-            # Fuera de contexto Flask — no crashear
             return f"{module_key}?"
 
         try:
@@ -282,11 +282,10 @@ class Tracer:
             raise
 
     # ══════════════════════════════════════════════════════
-    # API DE CONSULTA
+    # CONSULTAS
     # ══════════════════════════════════════════════════════
 
     def current_trace_id(self) -> Optional[str]:
-        """Trace ID activo en esta request, o None."""
         trace: Optional[_ActiveTrace] = getattr(g, "_trace", None)
         return trace.current_id if trace else None
 
@@ -299,31 +298,14 @@ class Tracer:
             return [r.to_dict() for r in self._history if r.had_loop]
 
     def snapshot(self) -> dict:
-        """Para /auth/control/status y /health."""
         with self._lock:
             total = len(self._history)
             loops = sum(1 for r in self._history if r.had_loop)
         return {
-            "total_traced": total,
+            "total_traced":   total,
             "loops_detected": loops,
-            "history_size": self.MAX_HISTORY,
+            "history_size":   self.MAX_HISTORY,
         }
-
-    # ══════════════════════════════════════════════════════
-    # HELPERS
-    # ══════════════════════════════════════════════════════
-
-    @staticmethod
-    def _new_id(parent_id: Optional[str]) -> str:
-        """
-        req_7f3a          — sin parent
-        req_7f3a.cb_4d1e  — hijo de req_7f3a
-        """
-        short = secrets.token_hex(2)
-        if parent_id:
-            base = parent_id.split(".")[0]
-            return f"{base}.cb_{short}"
-        return f"req_{short}"
 
 
 # ══════════════════════════════════════════════════════════
@@ -334,7 +316,6 @@ _tracer_instance: Optional[Tracer] = None
 
 
 def register_tracer(tracer: Tracer) -> None:
-    """Llamar desde app.py en Fase 2 después de crear el Tracer."""
     global _tracer_instance
     _tracer_instance = tracer
 
