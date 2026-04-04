@@ -503,7 +503,7 @@ class Conductor:
                 })
                 scope.set_context("registry", registry_snap)
                 scope.set_context("breakers", {
-                    s.name: {"state": s.state.value, "failures": s.failure_count}
+                    s["name"]: {"state": s.get("state"), "failures": s.get("failure_count", 0)}
                     for s in BreakerRegistry.all_snapshots()
                 })
                 scope.set_context("products", self._products)
@@ -539,16 +539,16 @@ class Conductor:
 
     def status(self) -> dict:
         return {
-            "ready":         self._ready,
-            "products":      self._products,
+            "ready":          self._ready,
+            "products":       self._products,
             "timer_watching": self._timer.watching() if self._timer else [],
-            "registry":      EventRegistry.snapshot(),
+            "registry":       EventRegistry.snapshot(),
             "breakers": {
-                **{s.name: s.__dict__ for s in BreakerRegistry.all_snapshots()},
+                **{s["name"]: s for s in BreakerRegistry.all_snapshots()},
                 **{n: b.to_dict() for n, b in self._breakers.items()},
             },
             "gates": {
-                **{s.name: s.__dict__ for s in GateRegistry.all_snapshots()},
+                **{s["name"]: s for s in GateRegistry.all_snapshots()},
                 **{n: str(g) for n, g in self._gates.items()},
             },
             "registries":    {n: r.snapshot() for n, r in self._registries.items()},
@@ -560,8 +560,8 @@ class Conductor:
 
     def all_snapshots(self) -> dict:
         return {
-            "breakers": [s.__dict__ for s in BreakerRegistry.all_snapshots()],
-            "gates":    [s.__dict__ for s in GateRegistry.all_snapshots()],
+            "breakers": BreakerRegistry.all_snapshots(),
+            "gates":    GateRegistry.all_snapshots(),
             "products": self._products,
             "registry": EventRegistry.snapshot(),
         }

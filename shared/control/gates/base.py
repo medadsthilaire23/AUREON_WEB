@@ -6,6 +6,7 @@
 #   - Añadidos Gate y GateSnapshot — usados por registries/base.py
 #     y conductor.py para el subsistema de control de auth
 #   - GateBase y SchemaField sin cambios — compatibilidad total
+#   - GateSnapshot.to_dict() añadido — fix para conductor.all_snapshots()
 #
 # Jerarquía completa:
 #     Gate      (este archivo) — gate simple con enabled/disabled
@@ -50,6 +51,9 @@ class GateSnapshot:
     """Estado puntual de un Gate — para métricas y healthcheck."""
     name:    str
     enabled: bool
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "enabled": self.enabled}
 
 
 class Gate:

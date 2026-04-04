@@ -63,24 +63,9 @@ class EventEntry:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # EVENT REGISTRY
-# Nombre interno: _EventRegistry — evita colisión con el singleton público.
 # ══════════════════════════════════════════════════════════════════════════════
 
 class _EventRegistry:
-    """
-    Libro de eventos del sistema de control.
-
-    Uso desde los Gates:
-        event_registry.record("20260404143022847", "OP001_002", EventState.PENDING, "DbGate")
-        event_registry.transition("20260404143022847", "OP001_002", EventState.FAILED, error="timeout")
-        event_registry.transition("20260404143022847", "OP001_002", EventState.FINISH)
-
-    Uso desde el Conductor:
-        failed = event_registry.get_failed()
-
-    Uso desde el Timer:
-        count = event_registry.count_active_for_gate("DbGate")
-    """
 
     MAX_EVENTS = 5_000
 
@@ -273,6 +258,32 @@ class _EventRegistry:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# HELPERS INTERNOS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _snapshot_to_dict(snap: Any) -> dict:
+    """
+    Normaliza cualquier snapshot a dict.
+
+    Los gates concretos (HttpGate, DbGate, ModuleGate, BootGate)
+    devuelven dicts planos desde snapshot().
+    Los feature-flag gates (Gate) devuelven GateSnapshot (dataclass frozen).
+    Esta función acepta ambos sin romperse.
+    """
+    if isinstance(snap, dict):
+        return snap
+    if hasattr(snap, "to_dict"):
+        return snap.to_dict()
+    # Fallback — dataclass sin to_dict
+    try:
+        return snap.__dict__
+    except AttributeError:
+        # dataclass frozen — usar dataclasses.asdict
+        import dataclasses
+        return dataclasses.asdict(snap)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # CATÁLOGO GENÉRICO
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -321,10 +332,11 @@ class _BreakerCatalog(_Catalog[BreakerBase]):
     def __init__(self) -> None:
         super().__init__(BreakerBase)
 
-    def all_snapshots(self) -> list[BreakerSnapshot]:
+    def all_snapshots(self) -> list[dict]:
+        """Devuelve todos los snapshots normalizados como dicts."""
         with self._lock:
             instances = list(self._store.values())
-        return [b.snapshot() for b in instances]
+        return [_snapshot_to_dict(b.snapshot()) for b in instances]
 
     def reset_all(self) -> None:
         with self._lock:
@@ -337,20 +349,27 @@ class _GateCatalog(_Catalog[Gate]):
     def __init__(self) -> None:
         super().__init__(Gate)
 
-    def all_snapshots(self) -> list[GateSnapshot]:
+    def all_snapshots(self) -> list[dict]:
+        """
+        Devuelve todos los snapshots normalizados como dicts.
+
+        Los gates concretos (HttpGate, DbGate, ModuleGate, BootGate)
+        tienen snapshot() → dict con campos extendidos.
+        Los feature-flag gates (Gate simple) tienen snapshot() → GateSnapshot.
+        _snapshot_to_dict() maneja ambos casos.
+        """
         with self._lock:
             instances = list(self._store.values())
-        return [g.snapshot() for g in instances]
+        return [_snapshot_to_dict(g.snapshot()) for g in instances]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ALIAS DE TIPO PÚBLICOS
-# Para type hints en Breaker, Conductor, Timer, Gates.
 # ══════════════════════════════════════════════════════════════════════════════
 
-EventRegistryType  = _EventRegistry
+EventRegistryType   = _EventRegistry
 BreakerRegistryType = _BreakerCatalog
-GateRegistryType   = _GateCatalog
+GateRegistryType    = _GateCatalog
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -361,6 +380,4 @@ event_registry   = _EventRegistry()
 BreakerRegistry  = _BreakerCatalog()
 GateRegistry     = _GateCatalog()
 
-# Alias en mayúsculas para compatibilidad con código existente que
-# importa `EventRegistry` como si fuera el singleton.
 EventRegistry = event_registry
