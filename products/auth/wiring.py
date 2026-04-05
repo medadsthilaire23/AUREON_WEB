@@ -2,13 +2,7 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # Fase 2 (Wiring) del módulo auth — AUREON v3.0
 #
-# Cambios respecto a versión anterior:
-#   - _get_or_create_gate no silencia excepciones — falla explícitamente
-#   - wire_registry se llama siempre, incluso si el gate ya existía
-#   - _wire_control_layer eliminado — los breakers v2 (failure_threshold,
-#     recovery_timeout) no son compatibles con BreakerBase v3
-#     Los breakers v3 los gestiona el Conductor + Timer, no parámetros fijos
-#   - Los feature-flag gates (oauth_google, etc.) se mantienen en GateRegistry
+# v3 — añadida inyección de DbGate en routes.py
 # ══════════════════════════════════════════════════════════════════════════════
 
 from shared.db                      import db
@@ -16,11 +10,6 @@ from shared.auth_middleware         import configure_auth_middleware, register_h
 from shared.control.registries.base import GateRegistry, BreakerRegistry, event_registry
 
 from products.auth.context import auth_context
-
-
-# ── Feature-flag gates (killswitches por funcionalidad) ───────────────────
-# Distintos de los gates concretos (HttpGate, DbGate, ModuleGate).
-# Estos controlan si una funcionalidad específica está habilitada.
 
 _FEATURE_GATES = [
     ("oauth_google",  True),
@@ -31,7 +20,6 @@ _FEATURE_GATES = [
 
 
 def _ensure_feature_gates(app) -> None:
-    """Registra los feature-flag gates si no existen."""
     from shared.control.gates.base import Gate
     for name, enabled in _FEATURE_GATES:
         if name not in GateRegistry:
@@ -40,16 +28,6 @@ def _ensure_feature_gates(app) -> None:
 
 
 def _get_or_create_concrete_gate(app, gate_class, gate_name: str):
-    """
-    Devuelve el gate concreto si ya está en GateRegistry,
-    o lo crea, registra e inyecta wire_registry.
-
-    No silencia excepciones — un gate concreto que falla al crearse
-    es un error crítico de wiring.
-
-    Llama wire_registry siempre — aunque el gate ya existiera,
-    garantiza que el EventRegistry esté inyectado.
-    """
     if gate_name in GateRegistry:
         gate = GateRegistry.get(gate_name)
     else:
@@ -57,19 +35,16 @@ def _get_or_create_concrete_gate(app, gate_class, gate_name: str):
         GateRegistry.register(gate)
         app.logger.info("      GATE    %-20s  created", gate_name)
 
-    # Siempre inyectar — idempotente si ya estaba inyectado
     if hasattr(gate, "wire_registry"):
         gate.wire_registry(event_registry)
 
     return gate
 
 
-# ── Punto de entrada principal ─────────────────────────────────────────────
-
 def wire_auth(app, conductor) -> None:
 
     # ═══════════════════════════════════════════════════════
-    # IMPORTS LOCALES (rompen ciclos de importación)
+    # IMPORTS LOCALES
     # ═══════════════════════════════════════════════════════
 
     from products.auth.models import (
@@ -87,6 +62,7 @@ def wire_auth(app, conductor) -> None:
     )
     from products.auth.oauth   import set_module_gate as oauth_set_gate
     from products.auth.passkey import set_module_gate as passkey_set_gate
+    from products.auth.routes  import set_db_gate
 
     from shared.control.gates.http_gate   import HttpGate
     from shared.control.gates.db_gate     import DbGate
@@ -111,13 +87,16 @@ def wire_auth(app, conductor) -> None:
     )
 
     # ═══════════════════════════════════════════════════════
-    # INYECCIÓN EN MÓDULOS EXTERNOS
+    # INYECCIÓN EN MÓDULOS
     # ═══════════════════════════════════════════════════════
 
     oauth_set_gate(module_gate)
     passkey_set_gate(module_gate)
     email_set_gate(module_gate)
-    app.logger.info("  [✓] ModuleGate inyectado en oauth, passkey, email")
+    set_db_gate(db_gate)
+
+    app.logger.info("  [✓] ModuleGate → oauth, passkey, email")
+    app.logger.info("  [✓] DbGate     → routes")
 
     # ═══════════════════════════════════════════════════════
     # INYECCIÓN EN CONTEXTO
@@ -151,7 +130,7 @@ def wire_auth(app, conductor) -> None:
     auth_context.breaker_registry            = BreakerRegistry
 
     # ═══════════════════════════════════════════════════════
-    # MIDDLEWARE — HttpGate incluido
+    # MIDDLEWARE
     # ═══════════════════════════════════════════════════════
 
     configure_auth_middleware(

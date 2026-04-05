@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AUREON — Sistema de Control</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1d27;
+    --border:   rgba(255,255,255,0.08);
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --open:     #22c55e;
+    --closed:   #ef4444;
+    --warn:     #f59e0b;
+    --blue:     #3b82f6;
+    --font:     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 24px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: .5px;
+  }
+
+  header h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 10px; }
+
+  .refresh-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .refresh-btn:hover { border-color: rgba(255,255,255,0.2); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .stat { font-size: 32px; font-weight: 600; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 99px;
+  }
+
+  .pill.open   { background: rgba(34,197,94,.15);  color: var(--open);   }
+  .pill.closed { background: rgba(239,68,68,.15);  color: var(--closed); }
+  .pill.warn   { background: rgba(245,158,11,.15); color: var(--warn);   }
+  .pill.blue   { background: rgba(59,130,246,.15); color: var(--blue);   }
+
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); font-weight: 500; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+
+  .bar-wrap { background: rgba(255,255,255,0.06); border-radius: 4px; height: 6px; overflow: hidden; }
+  .bar      { height: 100%; border-radius: 4px; background: var(--blue); transition: width .4s; }
+  .bar.danger { background: var(--closed); }
+  .bar.warn   { background: var(--warn); }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--muted);
+    margin: 24px 0 12px;
+  }
+
+  .state-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+
+  .state-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+  }
+
+  .state-card .val { font-size: 26px; font-weight: 600; }
+  .state-card .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .6px; }
+
+  .state-card.create  { border-color: rgba(59,130,246,.3); }
+  .state-card.pending { border-color: rgba(245,158,11,.3); }
+  .state-card.failed  { border-color: rgba(239,68,68,.35); }
+  .state-card.processing { border-color: rgba(168,85,247,.3); }
+  .state-card.finish  { border-color: rgba(34,197,94,.3); }
+
+  .state-card.create  .val { color: var(--blue); }
+  .state-card.pending .val { color: var(--warn); }
+  .state-card.failed  .val { color: var(--closed); }
+  .state-card.processing .val { color: #a855f7; }
+  .state-card.finish  .val { color: var(--open); }
+
+  #last-updated { font-size: 12px; color: var(--muted); }
+
+  .error-box {
+    background: rgba(239,68,68,.1);
+    border: 1px solid rgba(239,68,68,.3);
+    border-radius: 8px;
+    padding: 14px 18px;
+    color: var(--closed);
+    font-size: 13px;
+  }
+
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AUREON <span>Sistema de Control</span></h1>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span id="last-updated"></span>
+    <button class="refresh-btn" onclick="load()">
+      <span id="spin-icon">↻</span> Actualizar
+    </button>
+  </div>
+</header>
+
+<div id="root"><div style="color:var(--muted);padding:40px 0;text-align:center;">Cargando...</div></div>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+const URL   = `/auth/control/status?token=${TOKEN}`;
+
+async function load() {
+  const spin = document.getElementById("spin-icon");
+  spin.innerHTML = '<div class="spinner" style="display:inline-block;vertical-align:middle;"></div>';
+
+  try {
+    const res  = await fetch(URL, { headers: { "X-Admin-Token": TOKEN } });
+    const data = await res.json();
+
+    if (!res.ok) {
+      document.getElementById("root").innerHTML =
+        `<div class="error-box">Error ${res.status}: ${data.error || "Sin acceso"}</div>`;
+      return;
+    }
+
+    render(data);
+    document.getElementById("last-updated").textContent =
+      "Actualizado: " + new Date().toLocaleTimeString("es");
+
+  } catch(e) {
+    document.getElementById("root").innerHTML =
+      `<div class="error-box">Error de conexión: ${e.message}</div>`;
+  } finally {
+    spin.textContent = "↻";
+  }
+}
+
+function pill(state) {
+  if (state === true  || state === "open"    || state === "standby") return `<span class="pill open"><span class="dot"></span>${state}</span>`;
+  if (state === false || state === "closed"  || state === "forced")  return `<span class="pill closed"><span class="dot"></span>${state}</span>`;
+  if (state === "watching") return `<span class="pill warn"><span class="dot"></span>watching</span>`;
+  return `<span class="pill blue">${state}</span>`;
+}
+
+function render(d) {
+  const c  = d.conductor || {};
+  const reg = c.registry || {};
+  const bs  = d.by_state || reg.by_state || {};
+  const bg  = reg.by_gate || {};
+  const gates    = d.gates    || [];
+  const breakers = d.breakers || [];
+  const watching = (c.timer_watching || []);
+
+  const total   = reg.total    || 0;
+  const active  = reg.active   || 0;
+  const cap     = reg.capacity || 5000;
+  const capPct  = Math.round((total / cap) * 100);
+  const capClass = capPct > 80 ? "danger" : capPct > 50 ? "warn" : "";
+
+  let html = `
+    <!-- Métricas principales -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">Sesiones activas</div>
+        <div class="stat">${d.active_sessions ?? "—"}</div>
+        <div style="color:var(--muted);font-size:12px;margin-top:4px">${d.active_users ?? "—"} usuarios distintos</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Eventos en registry</div>
+        <div class="stat">${total.toLocaleString()}</div>
+        <div style="margin-top:8px;">
+          <div class="bar-wrap"><div class="bar ${capClass}" style="width:${capPct}%"></div></div>
+          <div style="color:var(--muted);font-size:11px;margin-top:4px">${capPct}% de capacidad (${cap.toLocaleString()})</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Eventos activos</div>
+        <div class="stat">${active}</div>
+        <div style="color:var(--muted);font-size:12px;margin-top:4px">
+          ${watching.length > 0
+            ? `<span class="pill warn"><span class="dot"></span>Timer: ${watching.join(", ")}</span>`
+            : `<span class="pill open"><span class="dot"></span>Sin colas observadas</span>`}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Decisiones del Conductor</div>
+        <div class="stat">${c.decisions ?? 0}</div>
+        <div style="color:var(--muted);font-size:12px;margin-top:4px">
+          ${c.last_decision
+            ? `Última: ${c.last_decision.action} — ${new Date(c.last_decision.timestamp).toLocaleTimeString("es")}`
+            : "Sin decisiones aún"}
+        </div>
+      </div>
+    </div>
+
+    <!-- Estados de eventos -->
+    <div class="section-title">Estados del registry</div>
+    <div class="state-grid">
+      <div class="state-card create">
+        <div class="val">${(bs.create||0).toLocaleString()}</div>
+        <div class="lbl">Create</div>
+      </div>
+      <div class="state-card pending">
+        <div class="val">${(bs.pending||0).toLocaleString()}</div>
+        <div class="lbl">Pending</div>
+      </div>
+      <div class="state-card failed">
+        <div class="val">${(bs.failed||0).toLocaleString()}</div>
+        <div class="lbl">Failed</div>
+      </div>
+      <div class="state-card processing">
+        <div class="val">${(bs.processing||0).toLocaleString()}</div>
+        <div class="lbl">Processing</div>
+      </div>
+      <div class="state-card finish">
+        <div class="val">${(bs.finish||0).toLocaleString()}</div>
+        <div class="lbl">Finish</div>
+      </div>
+    </div>
+
+    <!-- Gates -->
+    <div class="section-title">Gates</div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Gate</th>
+            <th>Estado</th>
+            <th>Eventos (registry)</th>
+            <th>Pass</th>
+            <th>Fail</th>
+            <th>Latencia avg</th>
+            <th>Activos</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${gates.map(g => {
+            const gateEvents = bg[g.name] || 0;
+            const total_ops  = (g.pass_count||0) + (g.fail_count||0);
+            const fail_pct   = total_ops > 0 ? Math.round((g.fail_count||0)/total_ops*100) : 0;
+            const bar_class  = fail_pct > 10 ? "danger" : fail_pct > 3 ? "warn" : "";
+            return `<tr>
+              <td><strong>${g.name}</strong></td>
+              <td>${pill(g.enabled !== undefined ? g.enabled : true)}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span>${gateEvents.toLocaleString()}</span>
+                </div>
+              </td>
+              <td style="color:var(--open)">${(g.pass_count||0).toLocaleString()}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span style="color:${fail_pct>0?'var(--closed)':'var(--muted)'}">${(g.fail_count||0).toLocaleString()}</span>
+                  ${fail_pct > 0 ? `<div class="bar-wrap" style="width:60px"><div class="bar ${bar_class}" style="width:${Math.min(fail_pct,100)}%"></div></div>` : ""}
+                </div>
+              </td>
+              <td style="color:var(--muted)">${g.avg_latency_ms != null ? g.avg_latency_ms + "ms" : "—"}</td>
+              <td style="color:var(--muted)">${g.active_ops != null ? g.active_ops : "—"}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Breakers -->
+    ${breakers.length > 0 ? `
+    <div class="section-title">Breakers</div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Breaker</th><th>Estado</th><th>Gate</th><th>Trigger op</th><th>Forzado</th></tr>
+        </thead>
+        <tbody>
+          ${breakers.map(b => `<tr>
+            <td><strong>${b.name}</strong></td>
+            <td>${pill(b.state)}</td>
+            <td style="color:var(--muted)">${b.gate_name || "—"}</td>
+            <td style="color:var(--muted);font-size:12px;font-family:monospace">${b.trigger_op || "—"}</td>
+            <td>${b.forced ? `<span class="pill closed">sí</span>` : `<span style="color:var(--muted)">no</span>`}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>` : ""}
+
+    <!-- Eventos por gate en registry -->
+    ${Object.keys(bg).length > 0 ? `
+    <div class="section-title">Distribución por gate (registry)</div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Gate</th><th>Eventos</th><th>Distribución</th></tr></thead>
+        <tbody>
+          ${Object.entries(bg).sort((a,b)=>b[1]-a[1]).map(([name,count]) => {
+            const pct = total > 0 ? Math.round(count/total*100) : 0;
+            return `<tr>
+              <td>${name}</td>
+              <td>${count.toLocaleString()}</td>
+              <td style="width:200px">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div class="bar-wrap" style="flex:1"><div class="bar" style="width:${pct}%"></div></div>
+                  <span style="color:var(--muted);font-size:12px;min-width:30px">${pct}%</span>
+                </div>
+              </td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>` : ""}
+  `;
+
+  document.getElementById("root").innerHTML = html;
+}
+
+// Auto-refresh cada 10 segundos
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>

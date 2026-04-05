@@ -1,13 +1,17 @@
 # products/auth/routes.py
 # ══════════════════════════════════════════════════════════════════════════════
 # Blueprint principal de autenticación AUREON.
+#
+# v3 — DbGate checkpoints en:
+#      login     → OP001_002 (user lookup) + OP001_003 (session create)
+#      register  → OP002_002 (user create) + OP002_004 (session create)
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
 import logging
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request, g, render_template, session, redirect
+from flask import Blueprint, jsonify, request, g, render_template, session, redirect, send_from_directory
 
 from shared.db import db
 from products.auth.models import (
@@ -46,6 +50,20 @@ from shared.auth_middleware import require_auth, require_verified  # noqa: E402
 
 _verification_tokens: dict = {}
 _reset_tokens: dict        = {}
+
+# ── Ruta absoluta al directorio static/admin ─────────────────────────────
+_STATIC_ADMIN = os.path.abspath(
+    os.path.join(_AUTH_DIR, '..', '..', 'static', 'admin')
+)
+
+# ── DbGate — inyectado en Fase 2 desde wiring.py ──────────────────────────
+_db_gate = None
+
+
+def set_db_gate(gate) -> None:
+    """Llamado desde wiring.py en Fase 2."""
+    global _db_gate
+    _db_gate = gate
 
 
 # ══════════════════════════════════════════════════════════
@@ -124,10 +142,6 @@ def devices_page():
 # ══════════════════════════════════════════════════════════
 
 def _snap_to_dict(snap) -> dict:
-    """
-    Convierte un snapshot a dict de forma segura.
-    Acepta tanto objetos con atributos como dicts planos.
-    """
     if isinstance(snap, dict):
         return snap
     if hasattr(snap, "to_dict"):
@@ -136,10 +150,6 @@ def _snap_to_dict(snap) -> dict:
 
 
 def _check_admin_token() -> bool:
-    """
-    Verifica el ADMIN_TOKEN via X-Admin-Token header o ?token= query param.
-    Si la variable de entorno no está configurada, bloquea siempre.
-    """
     admin_token = os.environ.get("ADMIN_TOKEN", "")
     if not admin_token:
         return False
@@ -151,10 +161,17 @@ def _check_admin_token() -> bool:
     return incoming == admin_token
 
 
+@auth_bp.get("/control/dashboard")
+def control_dashboard():
+    if not _check_admin_token():
+        return jsonify({"error": "No autorizado"}), 403
+    return send_from_directory(_STATIC_ADMIN, "control_dashboard.html")
+
+
 @auth_bp.get("/control/status")
 def control_status():
     """
-    Estado en vivo del subsistema de control (breakers + gates).
+    Estado en vivo del subsistema de control.
     Protegido con ADMIN_TOKEN via X-Admin-Token header o ?token= query param.
     """
     if not _check_admin_token():
@@ -163,50 +180,43 @@ def control_status():
     from shared.control.registries.base import BreakerRegistry, GateRegistry
     from products.auth.context import auth_context
 
-    # ── Breakers ──────────────────────────────────────────
     breakers = []
     for snap in BreakerRegistry.all_snapshots():
         s = _snap_to_dict(snap)
         breakers.append({
             "name":        s.get("name"),
             "state":       s.get("state").value if hasattr(s.get("state"), "value") else s.get("state"),
-            "failures":    s.get("failure_count", s.get("failures")),
-            "successes":   s.get("success_count", s.get("successes")),
-            "retry_after": round(s["retry_after"], 1) if s.get("retry_after") else None,
-            "opened_at":   s.get("opened_at"),
+            "gate_name":   s.get("gate_name"),
+            "trigger_op":  s.get("trigger_op"),
+            "forced":      s.get("forced", False),
         })
 
-    # ── Gates ─────────────────────────────────────────────
     gates = []
     for snap in GateRegistry.all_snapshots():
         s = _snap_to_dict(snap)
         gates.append({
-            "name":    s.get("name"),
-            "enabled": s.get("enabled"),
+            "name":           s.get("name"),
+            "enabled":        s.get("enabled"),
+            "pass_count":     s.get("pass_count"),
+            "fail_count":     s.get("fail_count"),
+            "active_ops":     s.get("active_ops") or s.get("active_calls"),
+            "avg_latency_ms": s.get("avg_latency_ms"),
         })
 
-    # ── Conductor — captura el error real para diagnóstico ────────────────
     conductor_status = None
     if auth_context.conductor:
         try:
             conductor_status = auth_context.conductor.status()
         except Exception as e:
-            # Loguea el traceback completo en el servidor
             log.exception("[control/status] conductor.status() falló")
-            # Devuelve el error real al cliente admin para diagnóstico
-            conductor_status = {
-                "error": str(e),
-                "type":  type(e).__name__,
-            }
+            conductor_status = {"error": str(e), "type": type(e).__name__}
 
-    # ── Sesiones activas ──────────────────────────────────
     try:
         active_sessions = UserSession.query.filter_by(revoked_at=None).count()
         active_users    = db.session.query(UserSession.user_id)\
                             .filter_by(revoked_at=None)\
                             .distinct().count()
-    except Exception as e:
-        log.exception("[control/status] error consultando sesiones")
+    except Exception:
         active_sessions = None
         active_users    = None
 
@@ -242,26 +252,63 @@ def register():
     if errors:
         return jsonify({"error": "Contraseña débil", "details": errors}), 400
 
-    if User.query.filter_by(email=email).first():
-        return jsonify({"error": "Este email ya está registrado"}), 409
+    # OP002_002 — crear usuario en DB
+    try:
+        if _db_gate is not None:
+            with _db_gate.scan("OP002_002"):
+                if User.query.filter_by(email=email).first():
+                    return jsonify({"error": "Este email ya está registrado"}), 409
 
-    user = User(name=name, email=email)
-    db.session.add(user)
-    db.session.flush()
+                user = User(name=name, email=email)
+                db.session.add(user)
+                db.session.flush()
 
-    identity = UserIdentity(
-        user_id=user.id,
-        provider="aureon",
-        provider_id=email,
-        password_hash=hash_password(password),
-    )
-    db.session.add(identity)
+                identity = UserIdentity(
+                    user_id=user.id,
+                    provider="aureon",
+                    provider_id=email,
+                    password_hash=hash_password(password),
+                )
+                db.session.add(identity)
 
-    product = UserProduct(user_id=user.id, product_id="lifebound")
-    db.session.add(product)
+                product = UserProduct(user_id=user.id, product_id="lifebound")
+                db.session.add(product)
+        else:
+            if User.query.filter_by(email=email).first():
+                return jsonify({"error": "Este email ya está registrado"}), 409
 
-    device_info = parse_device(request)
-    access_token, refresh_token, sess, device = _create_session(user, device_info)
+            user = User(name=name, email=email)
+            db.session.add(user)
+            db.session.flush()
+
+            identity = UserIdentity(
+                user_id=user.id,
+                provider="aureon",
+                provider_id=email,
+                password_hash=hash_password(password),
+            )
+            db.session.add(identity)
+
+            product = UserProduct(user_id=user.id, product_id="lifebound")
+            db.session.add(product)
+
+    except Exception as e:
+        db.session.rollback()
+        log.error("Register DB error: %s", e)
+        return jsonify({"error": "Error al crear la cuenta"}), 500
+
+    # OP002_004 — crear sesión en DB
+    try:
+        device_info = parse_device(request)
+        if _db_gate is not None:
+            with _db_gate.scan("OP002_004"):
+                access_token, refresh_token, sess, device = _create_session(user, device_info)
+        else:
+            access_token, refresh_token, sess, device = _create_session(user, device_info)
+
+    except Exception as e:
+        log.error("Register session error: %s", e)
+        return jsonify({"error": "Error al crear la sesión"}), 500
 
     token = generate_verification_token()
     _verification_tokens[token] = user.id
@@ -285,19 +332,41 @@ def login():
     if not email or not password:
         return jsonify({"error": "email y password son requeridos"}), 400
 
-    user = User.query.filter_by(email=email, is_active=True).first()
-    if not user:
-        return jsonify({"error": "Credenciales inválidas"}), 401
+    # OP001_002 — buscar usuario en DB
+    try:
+        if _db_gate is not None:
+            with _db_gate.scan("OP001_002"):
+                user = User.query.filter_by(email=email, is_active=True).first()
+                identity = UserIdentity.query.filter_by(
+                    user_id=user.id, provider="aureon"
+                ).first() if user else None
+        else:
+            user = User.query.filter_by(email=email, is_active=True).first()
+            identity = UserIdentity.query.filter_by(
+                user_id=user.id, provider="aureon"
+            ).first() if user else None
 
-    identity = UserIdentity.query.filter_by(
-        user_id=user.id, provider="aureon"
-    ).first()
-    if not identity or not verify_password(password, identity.password_hash):
+    except Exception as e:
+        log.error("Login DB error: %s", e)
+        return jsonify({"error": "Error al verificar credenciales"}), 500
+
+    if not user or not identity or not verify_password(password, identity.password_hash):
         return jsonify({"error": "Credenciales inválidas"}), 401
 
     device_info = parse_device(request)
     new_device  = is_new_device(user, device_info)
-    access_token, refresh_token, sess, device = _create_session(user, device_info)
+
+    # OP001_003 — crear sesión en DB
+    try:
+        if _db_gate is not None:
+            with _db_gate.scan("OP001_003"):
+                access_token, refresh_token, sess, device = _create_session(user, device_info)
+        else:
+            access_token, refresh_token, sess, device = _create_session(user, device_info)
+
+    except Exception as e:
+        log.error("Login session error: %s", e)
+        return jsonify({"error": "Error al crear la sesión"}), 500
 
     if new_device:
         send_new_device_alert(
