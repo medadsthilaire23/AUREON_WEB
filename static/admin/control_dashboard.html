@@ -5,623 +5,953 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AUREON — Sistema de Control</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
-    --bg:       #0f1117;
-    --surface:  #1a1d27;
-    --surface2: #222536;
-    --border:   rgba(255,255,255,0.08);
-    --border2:  rgba(255,255,255,0.14);
-    --text:     #e2e8f0;
-    --muted:    #64748b;
-    --open:     #22c55e;
-    --closed:   #ef4444;
-    --warn:     #f59e0b;
-    --blue:     #3b82f6;
-    --purple:   #a855f7;
-    --font:     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  }
+:root {
+  --bg:      #0d0f18;
+  --surface: #141720;
+  --s2:      #1c1f2e;
+  --s3:      #222538;
+  --border:  rgba(255,255,255,0.07);
+  --b2:      rgba(255,255,255,0.13);
+  --text:    #e2e8f0;
+  --muted:   #64748b;
+  --dim:     #94a3b8;
+  --open:    #22c55e;
+  --closed:  #ef4444;
+  --warn:    #f59e0b;
+  --blue:    #3b82f6;
+  --purple:  #a855f7;
+  --cyan:    #06b6d4;
+  --mono:    "SF Mono","Fira Code",monospace;
+  --font:    -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 14px;
-    line-height: 1.5;
-    padding: 24px;
-  }
+body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; line-height:1.5; }
 
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 28px;
-  }
+/* ── Sidebar ─────────────────────────────────── */
+.sidebar {
+  position:fixed; left:0; top:0; bottom:0; width:210px;
+  background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; z-index:20;
+}
+.logo { padding:18px 18px 16px; border-bottom:1px solid var(--border); }
+.logo h1 { font-size:15px; font-weight:700; letter-spacing:.4px; }
+.logo span { font-size:11px; color:var(--muted); }
+.nav { flex:1; padding:8px 0; overflow-y:auto; }
+.nav-item {
+  display:flex; align-items:center; gap:9px;
+  padding:8px 18px; cursor:pointer; font-size:13px; color:var(--muted);
+  border-left:2px solid transparent; transition:all .15s; user-select:none;
+}
+.nav-item:hover { color:var(--text); background:rgba(255,255,255,.03); }
+.nav-item.active { color:var(--text); border-left-color:var(--blue); background:rgba(59,130,246,.08); }
+.nav-icon { font-size:14px; width:16px; text-align:center; flex-shrink:0; }
+.sidebar-bottom { padding:14px 18px; border-top:1px solid var(--border); }
+.refresh-btn {
+  width:100%; background:rgba(59,130,246,.12); border:1px solid rgba(59,130,246,.25);
+  color:var(--blue); padding:7px; border-radius:6px; cursor:pointer; font-size:12px;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+}
+.refresh-btn:hover { background:rgba(59,130,246,.22); }
+.last-upd { font-size:11px; color:var(--muted); text-align:center; margin-bottom:8px; }
 
-  header h1 { font-size: 18px; font-weight: 600; letter-spacing: .5px; }
-  header h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 10px; }
+/* ── Main ───────────────────────────────────── */
+.main { margin-left:210px; padding:22px; min-height:100vh; }
+.page { display:none; }
+.page.active { display:block; }
+.page-title { font-size:17px; font-weight:600; margin-bottom:20px; }
 
-  .refresh-btn {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 6px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .refresh-btn:hover { border-color: rgba(255,255,255,0.2); }
+/* ── Cards ──────────────────────────────────── */
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:18px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:15px 17px; }
+.card-title { font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:7px; }
+.stat { font-size:28px; font-weight:600; }
+.stat-sub { font-size:12px; color:var(--muted); margin-top:3px; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px; }
+/* ── State cards ─────────────────────────────── */
+.state-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:18px; }
+.sc { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; text-align:center; }
+.sc .v { font-size:22px; font-weight:600; }
+.sc .l { font-size:10px; color:var(--muted); margin-top:3px; text-transform:uppercase; letter-spacing:.6px; }
+.sc.create     { border-color:rgba(59,130,246,.3);  } .sc.create     .v { color:var(--blue);   }
+.sc.pending    { border-color:rgba(245,158,11,.3);  } .sc.pending    .v { color:var(--warn);   }
+.sc.failed     { border-color:rgba(239,68,68,.35);  } .sc.failed     .v { color:var(--closed); }
+.sc.processing { border-color:rgba(168,85,247,.3);  } .sc.processing .v { color:var(--purple); }
+.sc.finish     { border-color:rgba(34,197,94,.3);   } .sc.finish     .v { color:var(--open);   }
 
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 18px 20px;
-  }
+/* ── Table ──────────────────────────────────── */
+.sec-title { font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); margin:18px 0 9px; display:flex; align-items:center; gap:8px; }
+.sec-hint { font-size:10px; color:var(--blue); text-transform:none; letter-spacing:0; font-weight:400; }
+.tbl-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+table { width:100%; border-collapse:collapse; }
+th { font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); font-weight:500; text-align:left; padding:9px 13px; border-bottom:1px solid var(--border); white-space:nowrap; }
+td { padding:10px 13px; border-bottom:1px solid var(--border); font-size:13px; }
+tr:last-child td { border-bottom:none; }
+.row-click { cursor:pointer; }
+.row-click:hover td { background:rgba(255,255,255,.025); }
+.row-selected td { background:rgba(59,130,246,.07) !important; }
+.empty { text-align:center; color:var(--muted); padding:28px; font-size:13px; }
 
-  .card-title {
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--muted);
-    margin-bottom: 10px;
-  }
+/* ── Toolbar / search ───────────────────────── */
+.toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.search { flex:1; background:var(--surface); border:1px solid var(--border); color:var(--text); padding:7px 12px; border-radius:6px; font-size:13px; outline:none; }
+.search:focus { border-color:var(--blue); }
+.search::placeholder { color:var(--muted); }
 
-  .stat { font-size: 32px; font-weight: 600; }
+/* ── Pills ──────────────────────────────────── */
+.pill { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:500; padding:2px 8px; border-radius:99px; }
+.pill.green  { background:rgba(34,197,94,.15);  color:var(--open);   }
+.pill.red    { background:rgba(239,68,68,.15);  color:var(--closed); }
+.pill.yellow { background:rgba(245,158,11,.15); color:var(--warn);   }
+.pill.blue   { background:rgba(59,130,246,.15); color:var(--blue);   }
+.pill.purple { background:rgba(168,85,247,.15); color:var(--purple); }
+.pill.gray   { background:rgba(100,116,139,.12); color:var(--muted); }
+.dot { width:6px; height:6px; border-radius:50%; background:currentColor; }
 
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 3px 10px;
-    border-radius: 99px;
-  }
-  .pill.open    { background: rgba(34,197,94,.15);  color: var(--open);   }
-  .pill.closed  { background: rgba(239,68,68,.15);  color: var(--closed); }
-  .pill.warn    { background: rgba(245,158,11,.15); color: var(--warn);   }
-  .pill.blue    { background: rgba(59,130,246,.15); color: var(--blue);   }
+/* ── Bars ───────────────────────────────────── */
+.bw { background:rgba(255,255,255,.06); border-radius:3px; height:5px; overflow:hidden; }
+.b  { height:100%; border-radius:3px; background:var(--blue); }
+.b.red { background:var(--closed); } .b.yellow { background:var(--warn); }
 
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+/* ── Avatar / user cell ─────────────────────── */
+.avatar { width:30px; height:30px; border-radius:50%; background:var(--s3); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:var(--blue); flex-shrink:0; overflow:hidden; }
+.avatar img { width:100%; height:100%; object-fit:cover; }
+.user-cell { display:flex; align-items:center; gap:9px; }
+.user-name  { font-weight:500; line-height:1.2; }
+.user-email { font-size:11px; color:var(--muted); }
 
-  table { width: 100%; border-collapse: collapse; }
-  th {
-    font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
-    color: var(--muted); font-weight: 500; text-align: left;
-    padding: 8px 10px; border-bottom: 1px solid var(--border);
-  }
-  td { padding: 10px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
-  tr:last-child td { border-bottom: none; }
+/* ── Event path ─────────────────────────────── */
+.ev-path { font-family:var(--mono); font-size:11px; display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
+.ev-root { color:var(--dim); }
+.ev-sep  { color:var(--muted); }
+.ev-seg  { font-weight:600; }
+.ev-seg.H   { color:var(--blue);   }
+.ev-seg.D   { color:var(--cyan);   }
+.ev-seg.M   { color:var(--purple); }
+.ev-seg.B   { color:var(--warn);   }
+.ev-seg.OG  { color:var(--open);   }
+.ev-seg.OGH { color:var(--open);   }
+.ev-seg.PL  { color:var(--dim);    }
+.ev-seg.R   { color:var(--dim);    }
 
-  /* Filas de gates clickeables */
-  tr.gate-row { cursor: pointer; transition: background .15s; }
-  tr.gate-row:hover td { background: rgba(59,130,246,0.06); }
-  tr.gate-row.active td { background: rgba(59,130,246,0.10); }
+/* ── Expandable gate panel ──────────────────── */
+.gate-events-row td { padding:0; }
+.gate-panel { background:var(--s2); border-top:1px solid var(--b2); animation:slideDown .18s ease; }
+@keyframes slideDown { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+.gate-panel-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; border-bottom:1px solid var(--border);
+  font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px;
+}
+.gate-panel-header strong { color:var(--blue); font-size:13px; text-transform:none; letter-spacing:0; }
+.panel-close-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:15px; padding:0 3px; }
+.panel-close-btn:hover { color:var(--text); }
+.events-scroll { max-height:300px; overflow-y:auto; }
+.ev-row {
+  display:grid; grid-template-columns:1fr auto auto auto;
+  gap:10px; align-items:center;
+  padding:9px 14px; border-bottom:1px solid var(--border);
+  cursor:pointer; transition:background .12s;
+}
+.ev-row:last-child { border-bottom:none; }
+.ev-row:hover { background:rgba(255,255,255,.03); }
+.ev-row.ev-selected { background:rgba(59,130,246,.09); }
+.ev-op  { font-family:var(--mono); font-size:11px; color:var(--muted); }
+.ev-dur { font-size:11px; color:var(--muted); text-align:right; white-space:nowrap; }
 
-  .click-hint {
-    font-size: 11px;
-    color: var(--blue);
-    opacity: 0.7;
-    margin-left: 6px;
-  }
+/* ── Drawer ─────────────────────────────────── */
+.drawer-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:40; display:none; }
+.drawer-overlay.open { display:block; }
+.drawer {
+  position:fixed; right:0; top:0; bottom:0; width:480px;
+  background:var(--surface); border-left:1px solid var(--b2);
+  z-index:41; overflow-y:auto;
+  transform:translateX(100%); transition:transform .22s ease;
+}
+.drawer.open { transform:translateX(0); }
+.drawer-header {
+  padding:18px 20px 14px; border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; justify-content:space-between;
+  position:sticky; top:0; background:var(--surface); z-index:1;
+}
+.drawer-title { font-size:14px; font-weight:600; }
+.drawer-sub   { font-size:11px; color:var(--muted); margin-top:3px; font-family:var(--mono); word-break:break-all; }
+.drawer-close { background:none; border:none; color:var(--muted); cursor:pointer; font-size:18px; padding:0 4px; flex-shrink:0; }
+.drawer-close:hover { color:var(--text); }
+.drawer-body  { padding:16px 20px; }
 
-  .bar-wrap { background: rgba(255,255,255,0.06); border-radius: 4px; height: 6px; overflow: hidden; }
-  .bar      { height: 100%; border-radius: 4px; background: var(--blue); transition: width .4s; }
-  .bar.danger { background: var(--closed); }
-  .bar.warn   { background: var(--warn); }
+/* ── Drawer sections ─────────────────────────── */
+.ds { margin-bottom:20px; }
+.ds-title { font-size:10px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+.dr { display:flex; justify-content:space-between; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--border); gap:12px; }
+.dr:last-child { border-bottom:none; }
+.dk { font-size:12px; color:var(--muted); flex-shrink:0; }
+.dv { font-size:12px; text-align:right; word-break:break-all; font-family:var(--mono); }
 
-  .section-title {
-    font-size: 12px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: .8px;
-    color: var(--muted);
-    margin: 24px 0 12px;
-  }
+/* ── Op chain ───────────────────────────────── */
+.op-tree { background:var(--s3); border-radius:8px; padding:12px 14px; display:flex; flex-direction:column; gap:4px; }
+.op-node { display:flex; align-items:flex-start; gap:8px; }
+.op-connector { font-size:11px; color:var(--muted); flex-shrink:0; margin-top:2px; font-family:var(--mono); }
+.op-info { flex:1; }
+.op-id-badge { font-family:var(--mono); font-size:10px; background:rgba(255,255,255,.07); padding:1px 6px; border-radius:4px; color:var(--dim); display:inline-block; margin-bottom:2px; }
+.op-name { font-size:12px; }
+.op-name.current { color:var(--text); font-weight:600; }
+.op-name.ancestor { color:var(--muted); }
+.op-gates-list { display:flex; gap:4px; flex-wrap:wrap; margin-top:3px; }
+.gate-tag { font-size:10px; padding:1px 7px; border-radius:4px; font-family:var(--mono); font-weight:500; }
+.gate-tag.H   { background:rgba(59,130,246,.15); color:var(--blue);   }
+.gate-tag.D   { background:rgba(6,182,212,.15);  color:var(--cyan);   }
+.gate-tag.M   { background:rgba(168,85,247,.15); color:var(--purple); }
+.gate-tag.B   { background:rgba(245,158,11,.15); color:var(--warn);   }
+.gate-tag.def { background:rgba(100,116,139,.12); color:var(--muted); }
 
-  .state-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+/* ── Siblings ───────────────────────────────── */
+.siblings-list { display:flex; flex-direction:column; gap:3px; }
+.sib-row {
+  display:grid; grid-template-columns:auto 1fr auto auto;
+  gap:8px; align-items:center;
+  padding:7px 10px; border-radius:6px; font-size:12px; cursor:pointer;
+}
+.sib-row.current { background:rgba(59,130,246,.12); border:1px solid rgba(59,130,246,.25); }
+.sib-row:not(.current) { background:var(--s3); border:1px solid transparent; }
+.sib-row:not(.current):hover { background:var(--s2); }
+.sib-depth { font-family:var(--mono); font-size:10px; color:var(--muted); white-space:nowrap; }
+.sib-info { min-width:0; }
+.sib-op { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:1px; }
+.sib-dur { font-size:11px; color:var(--muted); white-space:nowrap; }
 
-  .state-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px;
-    text-align: center;
-  }
-  .state-card .val { font-size: 26px; font-weight: 600; }
-  .state-card .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .6px; }
-  .state-card.create     { border-color: rgba(59,130,246,.3); }
-  .state-card.pending    { border-color: rgba(245,158,11,.3); }
-  .state-card.failed     { border-color: rgba(239,68,68,.35); }
-  .state-card.processing { border-color: rgba(168,85,247,.3); }
-  .state-card.finish     { border-color: rgba(34,197,94,.3); }
-  .state-card.create .val     { color: var(--blue); }
-  .state-card.pending .val    { color: var(--warn); }
-  .state-card.failed .val     { color: var(--closed); }
-  .state-card.processing .val { color: var(--purple); }
-  .state-card.finish .val     { color: var(--open); }
+/* ── Session item (drawer) ──────────────────── */
+.session-item { background:var(--s3); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:8px; }
+.activity-item { display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
+.activity-item:last-child { border-bottom:none; }
+.activity-dot { width:8px; height:8px; border-radius:50%; background:var(--blue); margin-top:5px; flex-shrink:0; }
+.activity-content { flex:1; }
+.activity-label { font-size:13px; }
+.activity-meta { font-size:11px; color:var(--muted); margin-top:1px; }
 
-  /* ── PANEL DE EVENTOS ────────────────────────────── */
-  .events-panel {
-    background: var(--surface2);
-    border: 1px solid var(--border2);
-    border-radius: 10px;
-    margin-top: 12px;
-    overflow: hidden;
-    animation: slideDown .2s ease;
-  }
-
-  @keyframes slideDown {
-    from { opacity: 0; transform: translateY(-6px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .events-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    font-size: 12px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: .7px;
-    color: var(--muted);
-  }
-
-  .events-panel-header strong { color: var(--blue); font-size: 13px; }
-
-  .events-panel-close {
-    background: none;
-    border: none;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 16px;
-    padding: 0 4px;
-    line-height: 1;
-  }
-  .events-panel-close:hover { color: var(--text); }
-
-  .events-list {
-    max-height: 320px;
-    overflow-y: auto;
-  }
-
-  .event-row {
-    display: grid;
-    grid-template-columns: 1fr auto auto auto auto;
-    gap: 12px;
-    align-items: center;
-    padding: 9px 16px;
-    border-bottom: 1px solid var(--border);
-    font-size: 12px;
-  }
-  .event-row:last-child { border-bottom: none; }
-  .event-row:hover { background: rgba(255,255,255,0.03); }
-
-  .event-id-cell { font-family: monospace; font-size: 11px; color: var(--muted); }
-  .event-id-cell .root { color: var(--text); }
-  .event-id-cell .path-arrow { color: var(--blue); margin: 0 3px; }
-  .event-id-cell .path-segment { color: var(--warn); }
-
-  .event-op { color: var(--muted); font-size: 11px; font-family: monospace; }
-
-  .event-dur { color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
-
-  .event-state-pill {
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 99px;
-    text-transform: uppercase;
-    letter-spacing: .5px;
-    white-space: nowrap;
-  }
-  .event-state-pill.finish     { background: rgba(34,197,94,.15);  color: var(--open);   }
-  .event-state-pill.failed     { background: rgba(239,68,68,.15);  color: var(--closed); }
-  .event-state-pill.pending    { background: rgba(245,158,11,.15); color: var(--warn);   }
-  .event-state-pill.create     { background: rgba(59,130,246,.15); color: var(--blue);   }
-  .event-state-pill.processing { background: rgba(168,85,247,.15); color: var(--purple); }
-
-  .event-error {
-    grid-column: 1 / -1;
-    color: var(--closed);
-    font-size: 11px;
-    padding: 4px 0 0;
-    font-family: monospace;
-  }
-
-  .events-empty {
-    padding: 24px;
-    text-align: center;
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  #last-updated { font-size: 12px; color: var(--muted); }
-
-  .error-box {
-    background: rgba(239,68,68,.1);
-    border: 1px solid rgba(239,68,68,.3);
-    border-radius: 8px;
-    padding: 14px 18px;
-    color: var(--closed);
-    font-size: 13px;
-  }
-
-  .spinner {
-    width: 16px; height: 16px;
-    border: 2px solid var(--border);
-    border-top-color: var(--blue);
-    border-radius: 50%;
-    animation: spin .7s linear infinite;
-    display: inline-block;
-    vertical-align: middle;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* ── Spinner ────────────────────────────────── */
+.spinner { width:13px; height:13px; border:2px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; display:inline-block; vertical-align:middle; }
+@keyframes spin { to{transform:rotate(360deg)} }
 </style>
 </head>
 <body>
 
-<header>
-  <h1>AUREON <span>Sistema de Control</span></h1>
-  <div style="display:flex;align-items:center;gap:12px;">
-    <span id="last-updated"></span>
-    <button class="refresh-btn" onclick="load()">
-      <span id="spin-icon">↻</span> Actualizar
-    </button>
+<nav class="sidebar">
+  <div class="logo"><h1>AUREON</h1><span>Sistema de Control</span></div>
+  <div class="nav">
+    <div class="nav-item active" onclick="showPage('control',this)"><span class="nav-icon">⚙</span> Control</div>
+    <div class="nav-item" onclick="showPage('registry',this)"><span class="nav-icon">📋</span> Registry</div>
+    <div class="nav-item" onclick="showPage('sessions',this)"><span class="nav-icon">🔑</span> Sesiones</div>
+    <div class="nav-item" onclick="showPage('users',this)"><span class="nav-icon">👥</span> Usuarios</div>
+    <div class="nav-item" onclick="showPage('activity',this)"><span class="nav-icon">📊</span> Actividad</div>
   </div>
-</header>
+  <div class="sidebar-bottom">
+    <div class="last-upd" id="last-upd"></div>
+    <button class="refresh-btn" onclick="loadAll()"><span id="spin-icon">↻</span> Actualizar</button>
+  </div>
+</nav>
 
-<div id="root"><div style="color:var(--muted);padding:40px 0;text-align:center;">Cargando...</div></div>
+<main class="main">
+
+  <!-- ── CONTROL ──────────────────────────────────── -->
+  <div class="page active" id="page-control">
+    <div class="page-title">Sistema de Control</div>
+    <div id="control-root"><div class="empty">Cargando...</div></div>
+  </div>
+
+  <!-- ── REGISTRY ─────────────────────────────────── -->
+  <div class="page" id="page-registry">
+    <div class="page-title">Registry de Eventos</div>
+    <div id="registry-root"><div class="empty">Cargando...</div></div>
+  </div>
+
+  <!-- ── SESIONES ─────────────────────────────────── -->
+  <div class="page" id="page-sessions">
+    <div class="page-title">Sesiones Activas</div>
+    <div class="toolbar">
+      <input class="search" type="text" placeholder="Buscar usuario, IP, dispositivo..." oninput="filterSessions(this.value)">
+    </div>
+    <div id="sessions-root"><div class="empty">Cargando...</div></div>
+  </div>
+
+  <!-- ── USUARIOS ─────────────────────────────────── -->
+  <div class="page" id="page-users">
+    <div class="page-title">Usuarios</div>
+    <div class="toolbar">
+      <input class="search" type="text" placeholder="Buscar nombre, email..." oninput="filterUsers(this.value)">
+    </div>
+    <div id="users-root"><div class="empty">Cargando...</div></div>
+  </div>
+
+  <!-- ── ACTIVIDAD ────────────────────────────────── -->
+  <div class="page" id="page-activity">
+    <div class="page-title">Actividad Global</div>
+    <div id="activity-root"><div class="empty">Cargando...</div></div>
+  </div>
+
+</main>
+
+<!-- Drawer único — usado por Control/Registry y por Sesiones/Usuarios -->
+<div class="drawer-overlay" id="overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title" id="drawer-title">Detalle</div>
+      <div class="drawer-sub"  id="drawer-sub"></div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</div>
 
 <script>
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
-const URL   = `/auth/control/status?token=${TOKEN}`;
+const API   = `/auth/control/status?token=${TOKEN}`;
+const H     = { "X-Admin-Token": TOKEN };
 
-// Gate actualmente expandido
+// ── Mapa de operaciones ───────────────────────────────────────────────────
+const OPS = {
+  "OP001":         { name:"Login (email/password)",           gates:["H","D"],       module:"auth"   },
+  "OP001_001":     { name:"Login — validar HTTP",             gates:["H"],           module:"auth"   },
+  "OP001_002":     { name:"Login — buscar usuario en DB",     gates:["D"],           module:"auth"   },
+  "OP001_003":     { name:"Login — crear sesión en DB",       gates:["D"],           module:"auth"   },
+  "OP001_004":     { name:"Login — alerta nuevo dispositivo", gates:["M"],           module:"auth"   },
+  "OP002":         { name:"Registro",                         gates:["H","D"],       module:"auth"   },
+  "OP002_001":     { name:"Registro — validar HTTP",          gates:["H"],           module:"auth"   },
+  "OP002_002":     { name:"Registro — crear usuario",         gates:["D"],           module:"auth"   },
+  "OP002_003":     { name:"Registro — crear identidad",       gates:["D"],           module:"auth"   },
+  "OP002_004":     { name:"Registro — crear sesión",          gates:["D"],           module:"auth"   },
+  "OP002_005":     { name:"Registro — email verificación",    gates:["M"],           module:"auth"   },
+  "OP003":         { name:"OAuth Google",                     gates:["H","D","M"],   module:"auth"   },
+  "OP003_001":     { name:"OAuth Google — redirect",          gates:["H"],           module:"auth"   },
+  "OP003_002":     { name:"OAuth Google — token exchange",    gates:["M"],           module:"auth"   },
+  "OP003_002_001": { name:"OAuth Google — fetch token",       gates:["M"],           module:"auth"   },
+  "OP003_002_002": { name:"OAuth Google — userinfo",          gates:["M"],           module:"auth"   },
+  "OP003_003":     { name:"OAuth Google — DB usuario",        gates:["D"],           module:"auth"   },
+  "OP003_003_001": { name:"OAuth Google — lookup usuario",    gates:["D"],           module:"auth"   },
+  "OP003_003_002": { name:"OAuth Google — link identidad",    gates:["D"],           module:"auth"   },
+  "OP003_004":     { name:"OAuth Google — crear sesión",      gates:["D"],           module:"auth"   },
+  "OP004":         { name:"OAuth GitHub",                     gates:["H","D","M"],   module:"auth"   },
+  "OP004_001":     { name:"OAuth GitHub — redirect",          gates:["H"],           module:"auth"   },
+  "OP004_002":     { name:"OAuth GitHub — token exchange",    gates:["M"],           module:"auth"   },
+  "OP004_002_001": { name:"OAuth GitHub — fetch token",       gates:["M"],           module:"auth"   },
+  "OP004_002_002": { name:"OAuth GitHub — profile",           gates:["M"],           module:"auth"   },
+  "OP004_002_003": { name:"OAuth GitHub — emails",            gates:["M"],           module:"auth"   },
+  "OP004_003":     { name:"OAuth GitHub — DB usuario",        gates:["D"],           module:"auth"   },
+  "OP004_004":     { name:"OAuth GitHub — crear sesión",      gates:["D"],           module:"auth"   },
+  "OP005":         { name:"Passkey — registro",               gates:["H","D","M"],   module:"auth"   },
+  "OP005_001":     { name:"Passkey — begin register",         gates:["H","D"],       module:"auth"   },
+  "OP005_001_001": { name:"Passkey — lookup usuario",         gates:["D"],           module:"auth"   },
+  "OP005_001_002": { name:"Passkey — generar opciones",       gates:["M"],           module:"auth"   },
+  "OP005_002":     { name:"Passkey — complete register",      gates:["H","D","M"],   module:"auth"   },
+  "OP005_002_001": { name:"Passkey — verificar",              gates:["M"],           module:"auth"   },
+  "OP005_002_002": { name:"Passkey — guardar en DB",          gates:["D"],           module:"auth"   },
+  "OP006":         { name:"Passkey — login",                  gates:["H","D","M"],   module:"auth"   },
+  "OP006_001":     { name:"Passkey — begin login",            gates:["H"],           module:"auth"   },
+  "OP006_002":     { name:"Passkey — complete login",         gates:["H","D","M"],   module:"auth"   },
+  "OP006_002_001": { name:"Passkey — credential lookup",      gates:["D"],           module:"auth"   },
+  "OP006_002_002": { name:"Passkey — verificar",              gates:["M"],           module:"auth"   },
+  "OP006_002_003": { name:"Passkey — crear sesión",           gates:["D"],           module:"auth"   },
+  "OP007":         { name:"Email transaccional",              gates:["M"],           module:"auth"   },
+  "OP007_001":     { name:"Email — verificación",             gates:["M"],           module:"auth"   },
+  "OP007_002":     { name:"Email — nuevo dispositivo",        gates:["M"],           module:"auth"   },
+  "OP007_003":     { name:"Email — reset password",           gates:["M"],           module:"auth"   },
+  "OP007_004":     { name:"Email — sesiones revocadas",       gates:["M"],           module:"auth"   },
+  "OP008":         { name:"Gestión de sesiones",              gates:["H","D"],       module:"auth"   },
+  "OP008_001":     { name:"Sesión — logout",                  gates:["D"],           module:"auth"   },
+  "OP008_002":     { name:"Sesión — refresh token",           gates:["H","D"],       module:"auth"   },
+  "OP008_003":     { name:"Sesión — revocar una",             gates:["D"],           module:"auth"   },
+  "OP008_004":     { name:"Sesión — revocar todas",           gates:["D","M"],       module:"auth"   },
+  "OP009":         { name:"DB — inicialización",              gates:["B","D"],       module:"system" },
+  "OP009_001":     { name:"DB — conexión",                    gates:["D"],           module:"system" },
+  "OP009_002":     { name:"DB — migraciones",                 gates:["D"],           module:"system" },
+  "OP009_003":     { name:"DB — verificar tablas",            gates:["D"],           module:"system" },
+  "OP010":         { name:"Boot del sistema",                 gates:["B"],           module:"system" },
+  "OP010_001":     { name:"Boot — fase 1: DB",                gates:["B"],           module:"system" },
+  "OP010_002":     { name:"Boot — fase 1: blueprints",        gates:["B"],           module:"system" },
+  "OP010_003":     { name:"Boot — fase 2: OAuth",             gates:["B"],           module:"system" },
+  "OP010_004":     { name:"Boot — fase 2: conductor",         gates:["B"],           module:"system" },
+  "OP010_005":     { name:"Boot — fase 2: tracer",            gates:["B"],           module:"system" },
+};
+
+// ── Estado global ─────────────────────────────────────────────────────────
+let _data        = null;
+let _sessions    = null;
+let _users       = null;
+let _activity    = null;
 let _expandedGate = null;
-let _lastData     = null;
+let _selectedEv   = null;
+let _allEvents    = [];
+let _sessSearch   = "";
+let _userSearch   = "";
 
-async function load() {
-  const spin = document.getElementById("spin-icon");
-  spin.innerHTML = '<div class="spinner"></div>';
+// ── Carga ─────────────────────────────────────────────────────────────────
+async function fetchJSON(url) {
+  const res = await fetch(url, { headers: H });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
 
+async function loadAll() {
+  const si = document.getElementById("spin-icon");
+  si.innerHTML = '<div class="spinner"></div>';
+  await Promise.all([loadControl(), loadSessions(), loadUsers(), loadActivity()]);
+  si.textContent = "↻";
+  document.getElementById("last-upd").textContent = new Date().toLocaleTimeString("es");
+}
+
+async function loadControl() {
   try {
-    const res  = await fetch(URL, { headers: { "X-Admin-Token": TOKEN } });
-    const data = await res.json();
-
-    if (!res.ok) {
-      document.getElementById("root").innerHTML =
-        `<div class="error-box">Error ${res.status}: ${data.error || "Sin acceso"}</div>`;
-      return;
-    }
-
-    _lastData = data;
-    render(data);
-    document.getElementById("last-updated").textContent =
-      "Actualizado: " + new Date().toLocaleTimeString("es");
-
+    _data = await fetchJSON(`/auth/control/status?token=${TOKEN}`);
+    _allEvents = [];
+    for (const [gate, evs] of Object.entries(_data.events_by_gate || {}))
+      for (const ev of evs) _allEvents.push({...ev, gate});
+    renderControl(_data);
+    renderRegistry();
+    if (_expandedGate) restoreGatePanel();
   } catch(e) {
-    document.getElementById("root").innerHTML =
-      `<div class="error-box">Error de conexión: ${e.message}</div>`;
-  } finally {
-    spin.textContent = "↻";
+    document.getElementById("control-root").innerHTML =
+      `<div style="color:var(--closed);padding:20px">Error: ${e.message}</div>`;
   }
 }
 
-function pill(state) {
-  if (state === true  || state === "open"    || state === "standby") return `<span class="pill open"><span class="dot"></span>${state}</span>`;
-  if (state === false || state === "closed"  || state === "forced")  return `<span class="pill closed"><span class="dot"></span>${state}</span>`;
-  if (state === "watching") return `<span class="pill warn"><span class="dot"></span>watching</span>`;
-  return `<span class="pill blue">${state}</span>`;
+async function loadSessions() {
+  try {
+    _sessions = await fetchJSON(`/auth/control/sessions?token=${TOKEN}`);
+    renderSessions(_sessions.sessions || [], _sessSearch);
+  } catch(e) {
+    document.getElementById("sessions-root").innerHTML =
+      `<div class="empty" style="color:var(--closed)">Error: ${e.message}</div>`;
+  }
 }
 
-// ── Renderiza el camino del event_id ───────────────────────────────────────
-// "20260404143022847_D_M" → "20260404...847 → D → M"
-function renderEventPath(rawId) {
+async function loadUsers() {
+  try {
+    _users = await fetchJSON(`/auth/control/users?token=${TOKEN}`);
+    renderUsers(_users.users || [], _userSearch);
+  } catch(e) {
+    document.getElementById("users-root").innerHTML =
+      `<div class="empty" style="color:var(--closed)">Error: ${e.message}</div>`;
+  }
+}
+
+async function loadActivity() {
+  try {
+    _activity = await fetchJSON(`/auth/control/activity?token=${TOKEN}&limit=100`);
+    renderActivity(_activity.activity || []);
+  } catch(e) {
+    document.getElementById("activity-root").innerHTML =
+      `<div class="empty" style="color:var(--closed)">Error: ${e.message}</div>`;
+  }
+}
+
+function showPage(name, el) {
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
+  document.getElementById("page-"+name).classList.add("active");
+  el.classList.add("active");
+  closeDrawer();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function pillState(s) {
+  const m = {create:"blue",pending:"yellow",failed:"red",processing:"purple",finish:"green"};
+  return `<span class="pill ${m[s]||'gray'}">${(s||"").toUpperCase()}</span>`;
+}
+function pillBool(v) {
+  return v ? `<span class="pill green"><span class="dot"></span>activo</span>`
+           : `<span class="pill red"><span class="dot"></span>cerrado</span>`;
+}
+function rolePill(role) {
+  const m = { admin:"red", superadmin:"red", user:"gray" };
+  return `<span class="pill ${m[role]||'gray'}">${role||"user"}</span>`;
+}
+function fmtDur(ms) {
+  if (ms==null) return "—";
+  if (ms<1) return "<1ms";
+  if (ms>=1000) return (ms/1000).toFixed(2)+"s";
+  return Math.round(ms)+"ms";
+}
+function fmtDate(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleDateString("es",{day:"2-digit",month:"2-digit",year:"numeric"}); }
+  catch { return iso; }
+}
+function fmtTime(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("es",{day:"2-digit",month:"2-digit"})+" "+
+           d.toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  } catch { return iso; }
+}
+function opLabel(opId) { return OPS[opId]?.name || opId || "—"; }
+function initials(name) { return (name||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(); }
+
+function fmtEvId(rawId) {
   const parts = rawId.split("_");
   const root  = parts[0];
-  const path  = parts.slice(1);
-
-  const rootShort = root.length === 17
-    ? root.slice(0, 8) + "…" + root.slice(-3)
+  const short = root.length===17
+    ? `${root.slice(8,10)}:${root.slice(10,12)}:${root.slice(12,14)}.${root.slice(14,17)}`
     : root;
-
-  let html = `<span class="root">${rootShort}</span>`;
-  for (const seg of path) {
-    html += `<span class="path-arrow">→</span><span class="path-segment">${seg}</span>`;
-  }
-  return html;
+  const path = parts.slice(1);
+  let html = `<span class="ev-root">${short}</span>`;
+  for (const seg of path)
+    html += `<span class="ev-sep"> → </span><span class="ev-seg ${seg}">${seg}</span>`;
+  return `<div class="ev-path">${html}</div>`;
 }
 
-// ── Panel de eventos de un gate ────────────────────────────────────────────
-function renderEventsPanel(gateName, data) {
-  const events = (data.events_by_gate || {})[gateName] || [];
+function gateTag(alias) {
+  const cls = ["H","D","M","B"].includes(alias) ? alias : "def";
+  return `<span class="gate-tag ${cls}">${alias}</span>`;
+}
 
-  let rows = "";
-  if (events.length === 0) {
-    rows = `<div class="events-empty">Sin eventos recientes para ${gateName}</div>`;
-  } else {
-    // Más recientes primero (ya vienen ordenados del servidor)
-    for (const ev of events) {
-      const stateClass = ev.state || "create";
-      const dur = ev.duration_ms != null
-        ? `${Math.round(ev.duration_ms)}ms`
-        : "—";
+function buildOpChain(opId) {
+  if (!opId) return [];
+  const parts = opId.split("_");
+  const chain = [];
+  for (let i=1; i<=parts.length; i++) {
+    const id = parts.slice(0,i).join("_");
+    const op = OPS[id];
+    chain.push({ id, name:op?.name||id, gates:op?.gates||[], module:op?.module||"—" });
+  }
+  return chain;
+}
 
-      let errorRow = "";
-      if (ev.error) {
-        errorRow = `<div class="event-error">⚠ ${ev.error}</div>`;
-      }
+function parseTs(root) {
+  if (!root||root.length!==17) return "—";
+  return `${root.slice(6,8)}/${root.slice(4,6)}/${root.slice(0,4)} `+
+         `${root.slice(8,10)}:${root.slice(10,12)}:${root.slice(12,14)}.${root.slice(14,17)}`;
+}
 
-      rows += `
-        <div class="event-row">
-          <div class="event-id-cell">${renderEventPath(ev.event_id)}</div>
-          <div class="event-op">${ev.op_id || "—"}</div>
-          <div class="event-dur">${dur}</div>
-          <div><span class="event-state-pill ${stateClass}">${stateClass}</span></div>
-          ${errorRow}
+function avatarHtml(u) {
+  return u?.avatar_url
+    ? `<div class="avatar"><img src="${u.avatar_url}"></div>`
+    : `<div class="avatar">${initials(u?.name)}</div>`;
+}
+
+// ── RENDER: CONTROL ───────────────────────────────────────────────────────
+function renderControl(d) {
+  const c   = d.conductor||{};
+  const reg = c.registry ||{};
+  const bs  = reg.by_state||{};
+  const bg  = reg.by_gate ||{};
+  const gates    = d.gates   ||[];
+  const breakers = d.breakers||[];
+  const total = reg.total||0;
+  const cap   = reg.capacity||5000;
+  const capPct = Math.round(total/cap*100);
+  const capCls = capPct>80?"red":capPct>50?"yellow":"";
+
+  const gatesRows = gates.map(gt => {
+    const ev  = bg[gt.name]||0;
+    const tot = (gt.pass_count||0)+(gt.fail_count||0);
+    const fp  = tot>0?Math.round((gt.fail_count||0)/tot*100):0;
+    const isSel = _expandedGate===gt.name;
+    return `<tr class="row-click ${isSel?'row-selected':''}" id="gate-row-${gt.name}" onclick="toggleGatePanel('${gt.name}')">
+      <td><strong>${gt.name}</strong>${ev>0?`<span style="font-size:10px;color:var(--blue);margin-left:5px">▾</span>`:""}</td>
+      <td>${pillBool(gt.enabled!==false)}</td>
+      <td><span style="color:${ev>0?'var(--blue)':'inherit'};font-weight:${ev>0?600:400}">${ev}</span></td>
+      <td style="color:var(--open)">${(gt.pass_count||0).toLocaleString()}</td>
+      <td style="color:${fp>0?'var(--closed)':'var(--muted)'}">${(gt.fail_count||0).toLocaleString()}</td>
+      <td style="color:var(--muted)">${gt.avg_latency_ms!=null?gt.avg_latency_ms+"ms":"—"}</td>
+      <td style="color:var(--muted)">${gt.active_ops!=null?gt.active_ops:"—"}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("control-root").innerHTML = `
+    <div class="grid">
+      <div class="card"><div class="card-title">Sesiones activas</div>
+        <div class="stat">${d.active_sessions??'—'}</div>
+        <div class="stat-sub">${d.active_users??'—'} usuarios distintos</div></div>
+      <div class="card"><div class="card-title">Eventos en registry</div>
+        <div class="stat">${total.toLocaleString()}</div>
+        <div style="margin-top:8px"><div class="bw"><div class="b ${capCls}" style="width:${capPct}%"></div></div>
+        <div class="stat-sub">${capPct}% de ${cap.toLocaleString()}</div></div></div>
+      <div class="card"><div class="card-title">Eventos activos</div>
+        <div class="stat">${reg.active||0}</div>
+        <div class="stat-sub">${(c.timer_watching||[]).length>0?"Timer observando":"Sin colas activas"}</div></div>
+      <div class="card"><div class="card-title">Decisiones</div>
+        <div class="stat">${c.decisions??0}</div>
+        <div class="stat-sub">${c.last_decision?`Última: ${c.last_decision.action}`:"Sin decisiones"}</div></div>
+    </div>
+    <div class="state-grid">
+      ${["create","pending","failed","processing","finish"].map(s=>
+        `<div class="sc ${s}"><div class="v">${(bs[s]||0).toLocaleString()}</div><div class="l">${s}</div></div>`
+      ).join("")}
+    </div>
+    <div class="sec-title">Gates <span class="sec-hint">↓ click en una fila para ver sus eventos</span></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Gate</th><th>Estado</th><th>Eventos</th><th>Pass</th><th>Fail</th><th>Latencia avg</th><th>Activos</th></tr></thead>
+      <tbody id="gates-tbody">${gatesRows}</tbody>
+    </table></div>
+    ${breakers.length>0?`
+    <div class="sec-title">Breakers</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Breaker</th><th>Estado</th><th>Gate</th><th>Trigger op</th><th>Forzado</th></tr></thead>
+      <tbody>${breakers.map(b=>`<tr>
+        <td><strong>${b.name}</strong></td>
+        <td>${pillBool(b.state!=="open")}</td>
+        <td style="color:var(--muted)">${b.gate_name||"—"}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${b.trigger_op||"—"}</td>
+        <td>${b.forced?`<span class="pill red">sí</span>`:`<span class="pill gray">no</span>`}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>`:""}
+    ${Object.keys(bg).length>0?`
+    <div class="sec-title">Distribución por gate</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Gate</th><th>Eventos</th><th>Distribución</th></tr></thead>
+      <tbody>${Object.entries(bg).sort((a,b)=>b[1]-a[1]).map(([name,count])=>{
+        const pct=total>0?Math.round(count/total*100):0;
+        return `<tr><td>${name}</td><td>${count}</td>
+          <td style="width:160px"><div style="display:flex;align-items:center;gap:8px">
+            <div class="bw" style="flex:1"><div class="b" style="width:${pct}%"></div></div>
+            <span style="font-size:11px;color:var(--muted)">${pct}%</span>
+          </div></td></tr>`;
+      }).join("")}</tbody>
+    </table></div>`:""}
+  `;
+}
+
+// ── Gate panel ────────────────────────────────────────────────────────────
+function toggleGatePanel(gateName) {
+  if (_expandedGate===gateName) { collapseGatePanel(); return; }
+  _expandedGate = gateName;
+  document.querySelectorAll("#gates-tbody .row-click").forEach(r=>r.classList.remove("row-selected"));
+  const row = document.getElementById("gate-row-"+gateName);
+  if (row) row.classList.add("row-selected");
+  removeGatePanel();
+  if (row&&_data) {
+    const pr = document.createElement("tr");
+    pr.id="gate-panel-row"; pr.className="gate-events-row";
+    pr.innerHTML=`<td colspan="7">${buildGatePanel(gateName)}</td>`;
+    row.insertAdjacentElement("afterend",pr);
+    pr.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+}
+function collapseGatePanel() {
+  _expandedGate=null;
+  document.querySelectorAll("#gates-tbody .row-click").forEach(r=>r.classList.remove("row-selected"));
+  removeGatePanel();
+}
+function removeGatePanel() {
+  const old=document.getElementById("gate-panel-row"); if(old) old.remove();
+}
+function restoreGatePanel() {
+  if(!_expandedGate||!_data) return;
+  removeGatePanel();
+  const row=document.getElementById("gate-row-"+_expandedGate); if(!row) return;
+  row.classList.add("row-selected");
+  const pr=document.createElement("tr"); pr.id="gate-panel-row"; pr.className="gate-events-row";
+  pr.innerHTML=`<td colspan="7">${buildGatePanel(_expandedGate)}</td>`;
+  row.insertAdjacentElement("afterend",pr);
+}
+function buildGatePanel(gateName) {
+  const events=(_data.events_by_gate||{})[gateName]||[];
+  let rows=events.length===0
+    ? `<div class="empty">Sin eventos recientes para ${gateName}</div>`
+    : events.map(ev=>{
+        const isSel=_selectedEv&&_selectedEv.event_id===ev.event_id;
+        const evObj={...ev,gate:gateName};
+        return `<div class="ev-row ${isSel?'ev-selected':''}"
+          onclick='openEventDrawer(${JSON.stringify(evObj).replace(/'/g,"\\'")})'>
+          <div>${fmtEvId(ev.event_id)}</div>
+          <div class="ev-op">${ev.op_id||"—"} · ${opLabel(ev.op_id)}</div>
+          <div class="ev-dur">${fmtDur(ev.duration_ms)}</div>
+          <div>${pillState(ev.state)}</div>
         </div>`;
-    }
-  }
-
-  return `
-    <div class="events-panel" id="panel-${gateName}">
-      <div class="events-panel-header">
-        <span>Eventos — <strong>${gateName}</strong>
-          <span style="color:var(--muted);font-weight:400;margin-left:6px">${events.length} recientes</span>
-        </span>
-        <button class="events-panel-close" onclick="collapseGate()">&times;</button>
-      </div>
-      <div class="events-list">${rows}</div>
-    </div>`;
+      }).join("");
+  return `<div class="gate-panel">
+    <div class="gate-panel-header">
+      <span>Eventos — <strong>${gateName}</strong>
+        <span style="font-weight:400;margin-left:6px">${events.length} registros · click para investigar</span>
+      </span>
+      <button class="panel-close-btn" onclick="collapseGatePanel()">✕</button>
+    </div>
+    <div class="events-scroll">${rows}</div>
+  </div>`;
 }
 
-function expandGate(gateName) {
-  if (_expandedGate === gateName) {
-    collapseGate();
+// ── RENDER: REGISTRY ──────────────────────────────────────────────────────
+function renderRegistry() {
+  const all=_allEvents.slice().reverse();
+  if (!all.length) {
+    document.getElementById("registry-root").innerHTML=`<div class="empty">Sin eventos en el registry</div>`;
     return;
   }
-  _expandedGate = gateName;
-
-  // Marcar fila activa
-  document.querySelectorAll("tr.gate-row").forEach(r => r.classList.remove("active"));
-  const row = document.getElementById(`gate-row-${gateName}`);
-  if (row) row.classList.add("active");
-
-  // Insertar panel después de la fila
-  removePanel();
-  if (row && _lastData) {
-    const panel = document.createElement("tr");
-    panel.id = "events-panel-row";
-    panel.innerHTML = `<td colspan="7" style="padding:0">${renderEventsPanel(gateName, _lastData)}</td>`;
-    row.insertAdjacentElement("afterend", panel);
-    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
+  const rows=all.map(ev=>{
+    const isSel=_selectedEv&&_selectedEv.event_id===ev.event_id;
+    return `<tr class="row-click ${isSel?'row-selected':''}"
+      onclick='openEventDrawer(${JSON.stringify(ev).replace(/'/g,"\\'")})'>
+      <td>${fmtEvId(ev.event_id)}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--muted)">${ev.op_id||"—"}</td>
+      <td style="font-size:12px;color:var(--dim)">${opLabel(ev.op_id)}</td>
+      <td>${pillState(ev.state)}</td>
+      <td style="color:var(--muted)">${ev.gate||"—"}</td>
+      <td style="color:var(--muted)">${fmtDur(ev.duration_ms)}</td>
+      <td style="color:var(--closed);font-size:11px;font-family:var(--mono)">${ev.error||""}</td>
+    </tr>`;
+  }).join("");
+  document.getElementById("registry-root").innerHTML=`
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Event ID</th><th>Op ID</th><th>Operación</th><th>Estado</th><th>Gate</th><th>Duración</th><th>Error</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
-function collapseGate() {
-  _expandedGate = null;
-  document.querySelectorAll("tr.gate-row").forEach(r => r.classList.remove("active"));
-  removePanel();
+// ── RENDER: SESIONES ──────────────────────────────────────────────────────
+function filterSessions(q) {
+  _sessSearch=q.toLowerCase();
+  if (_sessions) renderSessions(_sessions.sessions||[], _sessSearch);
+}
+function renderSessions(sessions, q) {
+  const filtered=q?sessions.filter(s=>
+    (s.user?.name||"").toLowerCase().includes(q)||
+    (s.user?.email||"").toLowerCase().includes(q)||
+    (s.ip||"").includes(q)||
+    (s.device?.device_name||"").toLowerCase().includes(q)||
+    (s.device?.browser||"").toLowerCase().includes(q)
+  ):sessions;
+  const rows=filtered.length===0
+    ? `<tr><td colspan="7" class="empty">Sin sesiones activas</td></tr>`
+    : filtered.map(s=>{
+        const u=s.user||{}; const dv=s.device||{};
+        return `<tr class="row-click" onclick='openSessionDrawer(${JSON.stringify(s).replace(/'/g,"\\'")})'>
+          <td><div class="user-cell">${avatarHtml(u)}<div>
+            <div class="user-name">${u.name||"—"}</div>
+            <div class="user-email">${u.email||"—"}</div>
+          </div></div></td>
+          <td style="font-family:var(--mono)">${s.ip||"—"}</td>
+          <td style="color:var(--muted)">${dv.device_name||"—"}</td>
+          <td style="color:var(--muted)">${[dv.browser,dv.os].filter(Boolean).join(" / ")||"—"}</td>
+          <td style="color:var(--muted)">${[dv.city,dv.country].filter(Boolean).join(", ")||"—"}</td>
+          <td style="color:var(--muted);font-family:var(--mono)">${fmtTime(s.last_active_at)}</td>
+          <td style="color:var(--muted);font-family:var(--mono)">${fmtDate(s.created_at)}</td>
+        </tr>`;
+      }).join("");
+  document.getElementById("sessions-root").innerHTML=`
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${filtered.length} sesión${filtered.length!==1?"es":""} activa${filtered.length!==1?"s":""}</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Usuario</th><th>IP</th><th>Dispositivo</th><th>Navegador / OS</th><th>Ubicación</th><th>Última actividad</th><th>Creada</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
-function removePanel() {
-  const old = document.getElementById("events-panel-row");
-  if (old) old.remove();
+// ── RENDER: USUARIOS ──────────────────────────────────────────────────────
+function filterUsers(q) {
+  _userSearch=q.toLowerCase();
+  if (_users) renderUsers(_users.users||[], _userSearch);
+}
+function renderUsers(users, q) {
+  const filtered=q?users.filter(u=>
+    (u.name||"").toLowerCase().includes(q)||(u.email||"").toLowerCase().includes(q)
+  ):users;
+  const rows=filtered.length===0
+    ? `<tr><td colspan="8" class="empty">Sin usuarios</td></tr>`
+    : filtered.map(u=>`<tr class="row-click" onclick='openUserDrawer(${JSON.stringify(u).replace(/'/g,"\\'")})'>
+        <td><div class="user-cell">${avatarHtml(u)}<div>
+          <div class="user-name">${u.name}</div>
+          <div class="user-email">${u.email}</div>
+        </div></div></td>
+        <td>${rolePill(u.role)}</td>
+        <td>${(u.providers||[]).map(p=>`<span class="pill gray">${p}</span>`).join(" ")||"—"}</td>
+        <td><span class="pill ${u.active_sessions>0?'green':'gray'}">${u.active_sessions} activa${u.active_sessions!==1?"s":""}</span></td>
+        <td style="color:var(--muted)">${u.total_devices}</td>
+        <td style="color:var(--muted);font-family:var(--mono)">${u.last_seen_at?fmtTime(u.last_seen_at):"—"}</td>
+        <td style="font-family:var(--mono);color:var(--muted)">${u.last_ip||"—"}</td>
+        <td style="font-family:var(--mono);color:var(--muted)">${fmtDate(u.created_at)}</td>
+      </tr>`).join("");
+  document.getElementById("users-root").innerHTML=`
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${filtered.length} usuario${filtered.length!==1?"s":""}</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Usuario</th><th>Rol</th><th>Proveedores</th><th>Sesiones</th><th>Dispositivos</th><th>Última conexión</th><th>IP</th><th>Registro</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
-// ── Render principal ───────────────────────────────────────────────────────
-function render(d) {
-  const c   = d.conductor || {};
-  const reg = c.registry || {};
-  const bs  = d.by_state || reg.by_state || {};
-  const bg  = reg.by_gate || {};
-  const gates    = d.gates    || [];
-  const breakers = d.breakers || [];
-  const watching = (c.timer_watching || []);
-
-  const total   = reg.total    || 0;
-  const active  = reg.active   || 0;
-  const cap     = reg.capacity || 5000;
-  const capPct  = Math.round((total / cap) * 100);
-  const capClass = capPct > 80 ? "danger" : capPct > 50 ? "warn" : "";
-
-  let html = `
-    <!-- Métricas principales -->
-    <div class="grid">
-      <div class="card">
-        <div class="card-title">Sesiones activas</div>
-        <div class="stat">${d.active_sessions ?? "—"}</div>
-        <div style="color:var(--muted);font-size:12px;margin-top:4px">${d.active_users ?? "—"} usuarios distintos</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Eventos en registry</div>
-        <div class="stat">${total.toLocaleString()}</div>
-        <div style="margin-top:8px;">
-          <div class="bar-wrap"><div class="bar ${capClass}" style="width:${capPct}%"></div></div>
-          <div style="color:var(--muted);font-size:11px;margin-top:4px">${capPct}% de capacidad (${cap.toLocaleString()})</div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">Eventos activos</div>
-        <div class="stat">${active}</div>
-        <div style="color:var(--muted);font-size:12px;margin-top:4px">
-          ${watching.length > 0
-            ? `<span class="pill warn"><span class="dot"></span>Timer: ${watching.join(", ")}</span>`
-            : `<span class="pill open"><span class="dot"></span>Sin colas observadas</span>`}
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">Decisiones del Conductor</div>
-        <div class="stat">${c.decisions ?? 0}</div>
-        <div style="color:var(--muted);font-size:12px;margin-top:4px">
-          ${c.last_decision
-            ? `Última: ${c.last_decision.action} — ${new Date(c.last_decision.timestamp).toLocaleTimeString("es")}`
-            : "Sin decisiones aún"}
-        </div>
-      </div>
-    </div>
-
-    <!-- Estados del registry -->
-    <div class="section-title">Estados del registry</div>
-    <div class="state-grid">
-      <div class="state-card create">
-        <div class="val">${(bs.create||0).toLocaleString()}</div>
-        <div class="lbl">Create</div>
-      </div>
-      <div class="state-card pending">
-        <div class="val">${(bs.pending||0).toLocaleString()}</div>
-        <div class="lbl">Pending</div>
-      </div>
-      <div class="state-card failed">
-        <div class="val">${(bs.failed||0).toLocaleString()}</div>
-        <div class="lbl">Failed</div>
-      </div>
-      <div class="state-card processing">
-        <div class="val">${(bs.processing||0).toLocaleString()}</div>
-        <div class="lbl">Processing</div>
-      </div>
-      <div class="state-card finish">
-        <div class="val">${(bs.finish||0).toLocaleString()}</div>
-        <div class="lbl">Finish</div>
-      </div>
-    </div>
-
-    <!-- Gates -->
-    <div class="section-title">Gates
-      <span style="font-size:11px;color:var(--blue);font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0">
-        ↓ Haz click en una fila para ver sus eventos
-      </span>
-    </div>
-    <div class="card">
-      <table>
-        <thead>
-          <tr>
-            <th>Gate</th>
-            <th>Estado</th>
-            <th>Eventos (registry)</th>
-            <th>Pass</th>
-            <th>Fail</th>
-            <th>Latencia avg</th>
-            <th>Activos</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${gates.map(g => {
-            const gateEvents = bg[g.name] || 0;
-            const total_ops  = (g.pass_count||0) + (g.fail_count||0);
-            const fail_pct   = total_ops > 0 ? Math.round((g.fail_count||0)/total_ops*100) : 0;
-            const bar_class  = fail_pct > 10 ? "danger" : fail_pct > 3 ? "warn" : "";
-
-            // Latencia y activos — mostrar "—" solo si es null/undefined
-            // Si es 0 mostrar "0ms" / "0" (es un valor válido)
-            const latency = g.avg_latency_ms != null ? g.avg_latency_ms + "ms" : "—";
-            const active  = g.active_ops     != null ? g.active_ops            : "—";
-
-            // Hint de click si hay eventos
-            const hint = gateEvents > 0
-              ? `<span class="click-hint">▾ ver</span>`
-              : "";
-
-            return `<tr
-              class="gate-row"
-              id="gate-row-${g.name}"
-              onclick="expandGate('${g.name}')"
-              title="Click para ver eventos de ${g.name}"
-            >
-              <td><strong>${g.name}</strong>${hint}</td>
-              <td>${pill(g.enabled !== undefined ? g.enabled : true)}</td>
-              <td>
-                <span style="${gateEvents > 0 ? 'color:var(--blue);font-weight:600' : ''}">${gateEvents.toLocaleString()}</span>
-              </td>
-              <td style="color:var(--open)">${(g.pass_count||0).toLocaleString()}</td>
-              <td>
-                <div style="display:flex;align-items:center;gap:6px;">
-                  <span style="color:${fail_pct>0?'var(--closed)':'var(--muted)'}">${(g.fail_count||0).toLocaleString()}</span>
-                  ${fail_pct > 0 ? `<div class="bar-wrap" style="width:60px"><div class="bar ${bar_class}" style="width:${Math.min(fail_pct,100)}%"></div></div>` : ""}
-                </div>
-              </td>
-              <td style="color:${g.avg_latency_ms != null ? 'var(--text)' : 'var(--muted)'}">${latency}</td>
-              <td style="color:${g.active_ops != null ? 'var(--text)' : 'var(--muted)'}">${active}</td>
-            </tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Breakers -->
-    ${breakers.length > 0 ? `
-    <div class="section-title">Breakers</div>
-    <div class="card">
-      <table>
-        <thead>
-          <tr><th>Breaker</th><th>Estado</th><th>Gate</th><th>Trigger op</th><th>Forzado</th></tr>
-        </thead>
-        <tbody>
-          ${breakers.map(b => `<tr>
-            <td><strong>${b.name}</strong></td>
-            <td>${pill(b.state)}</td>
-            <td style="color:var(--muted)">${b.gate_name || "—"}</td>
-            <td style="color:var(--muted);font-size:12px;font-family:monospace">${b.trigger_op || "—"}</td>
-            <td>${b.forced ? `<span class="pill closed">sí</span>` : `<span style="color:var(--muted)">no</span>`}</td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
-    </div>` : ""}
-
-    <!-- Distribución por gate -->
-    ${Object.keys(bg).length > 0 ? `
-    <div class="section-title">Distribución por gate (registry)</div>
-    <div class="card">
-      <table>
-        <thead><tr><th>Gate</th><th>Eventos</th><th>Distribución</th></tr></thead>
-        <tbody>
-          ${Object.entries(bg).sort((a,b)=>b[1]-a[1]).map(([name,count]) => {
-            const pct = total > 0 ? Math.round(count/total*100) : 0;
-            return `<tr>
-              <td>${name}</td>
-              <td>${count.toLocaleString()}</td>
-              <td style="width:200px">
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <div class="bar-wrap" style="flex:1"><div class="bar" style="width:${pct}%"></div></div>
-                  <span style="color:var(--muted);font-size:12px;min-width:30px">${pct}%</span>
-                </div>
-              </td>
-            </tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>` : ""}
-  `;
-
-  document.getElementById("root").innerHTML = html;
-
-  // Restaurar panel expandido si había uno antes del refresh
-  if (_expandedGate && _lastData) {
-    const row = document.getElementById(`gate-row-${_expandedGate}`);
-    if (row) {
-      row.classList.add("active");
-      const panel = document.createElement("tr");
-      panel.id = "events-panel-row";
-      panel.innerHTML = `<td colspan="7" style="padding:0">${renderEventsPanel(_expandedGate, _lastData)}</td>`;
-      row.insertAdjacentElement("afterend", panel);
-    }
-  }
+// ── RENDER: ACTIVIDAD ─────────────────────────────────────────────────────
+function renderActivity(items) {
+  const typeColors={
+    login_success:"green",login_failed:"red",logout:"gray",
+    register:"blue",password_change:"yellow",profile_update:"blue",
+    session_revoked:"yellow",product_access:"purple",
+    oauth_linked:"green",oauth_unlinked:"yellow",
+  };
+  const rows=items.length===0
+    ? `<tr><td colspan="5" class="empty">Sin actividad registrada</td></tr>`
+    : items.map(a=>{
+        const u=a.user||{}; const cls=typeColors[a.event_type]||"gray";
+        return `<tr>
+          <td><span class="pill ${cls}">${a.label||a.event_type}</span></td>
+          <td><div class="user-cell">${avatarHtml(u)}<div>
+            <div style="font-size:13px">${u.name||"—"}</div>
+            <div class="user-email">${u.email||""}</div>
+          </div></div></td>
+          <td style="font-family:var(--mono);color:var(--muted)">${a.ip||"—"}</td>
+          <td style="color:var(--muted)">${a.device_name||"—"}</td>
+          <td style="font-family:var(--mono);color:var(--muted)">${fmtTime(a.created_at)}</td>
+        </tr>`;
+      }).join("");
+  document.getElementById("activity-root").innerHTML=`
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Evento</th><th>Usuario</th><th>IP</th><th>Dispositivo</th><th>Hora</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
-load();
-setInterval(load, 10000);
+// ── DRAWERS ───────────────────────────────────────────────────────────────
+
+// — Drawer evento (Control / Registry)
+function openEventDrawer(ev, scroll=true) {
+  _selectedEv=ev;
+  const root   =ev.root_id||(ev.event_id||"").split("_")[0];
+  const path   =ev.path||(ev.event_id||"").split("_").slice(1);
+  const op     =OPS[ev.op_id]||{};
+  const opName =op.name||ev.op_id||"—";
+  const chain  =buildOpChain(ev.op_id);
+  const siblings=_allEvents.filter(e=>(e.root_id||(e.event_id||"").split("_")[0])===root)
+    .sort((a,b)=>a.event_id<b.event_id?-1:1);
+
+  document.getElementById("drawer-title").textContent=opName;
+  document.getElementById("drawer-sub").textContent=ev.event_id;
+
+  const chainHtml=chain.map((item,i)=>`
+    <div class="op-node" style="padding-left:${i*16}px">
+      ${i>0?`<span class="op-connector" style="margin-right:4px">└─</span>`:""}
+      <div class="op-info">
+        <div class="op-id-badge">${item.id}</div>
+        <div class="op-name ${item.id===ev.op_id?'current':'ancestor'}">${item.name}</div>
+        <div class="op-gates-list">${item.gates.map(g=>gateTag(g)).join("")}</div>
+      </div>
+    </div>`).join("");
+
+  const sibHtml=siblings.length===0
+    ? `<div style="font-size:12px;color:var(--muted)">Sin eventos relacionados</div>`
+    : siblings.map(sib=>{
+        const sibPath=sib.path||(sib.event_id||"").split("_").slice(1);
+        const isCur=sib.event_id===ev.event_id;
+        const depth=sibPath.length;
+        const depthStr=depth===0?"●":"  ".repeat(depth-1)+"└─";
+        const sibEvObj=JSON.stringify(sib).replace(/'/g,"\\'");
+        return `<div class="sib-row ${isCur?'current':''}" onclick='${isCur?"":"openEventDrawer("+sibEvObj+")"}'>
+          <div class="sib-depth">${depthStr}</div>
+          <div class="sib-info">
+            <div>${fmtEvId(sib.event_id)}</div>
+            <div class="sib-op">${sib.op_id||"—"} · ${opLabel(sib.op_id)}</div>
+          </div>
+          <div class="sib-dur">${fmtDur(sib.duration_ms)}</div>
+          <div>${pillState(sib.state)}</div>
+        </div>`;
+      }).join("");
+
+  document.getElementById("drawer-body").innerHTML=`
+    <div class="ds"><div class="ds-title">Identidad</div>
+      <div class="dr"><span class="dk">Event ID</span><span class="dv">${ev.event_id}</span></div>
+      <div class="dr"><span class="dk">Root ID</span><span class="dv">${root}</span></div>
+      <div class="dr"><span class="dk">Timestamp</span><span class="dv">${parseTs(root)}</span></div>
+      <div class="dr"><span class="dk">Gate origen</span><span class="dv">${ev.gate||"—"}</span></div>
+      <div class="dr"><span class="dk">Estado</span><span class="dv">${pillState(ev.state)}</span></div>
+      <div class="dr"><span class="dk">Duración</span><span class="dv">${fmtDur(ev.duration_ms)}</span></div>
+      ${ev.error?`<div class="dr"><span class="dk" style="color:var(--closed)">Error</span><span class="dv" style="color:var(--closed)">${ev.error}</span></div>`:""}
+    </div>
+    <div class="ds"><div class="ds-title">Patrón de operación</div>
+      <div class="op-tree">${chainHtml}</div>
+    </div>
+    <div class="ds"><div class="ds-title">Eventos del mismo request</div>
+      <div class="siblings-list">${sibHtml}</div>
+    </div>`;
+  openDrawer(scroll);
+}
+
+// — Drawer sesión
+function openSessionDrawer(s) {
+  const u=s.user||{}; const dv=s.device||{};
+  document.getElementById("drawer-title").textContent=u.name||"Sesión";
+  document.getElementById("drawer-sub").textContent=u.email||"";
+  document.getElementById("drawer-body").innerHTML=`
+    <div class="ds"><div class="ds-title">Usuario</div>
+      <div class="dr"><span class="dk">ID</span><span class="dv">${u.id||"—"}</span></div>
+      <div class="dr"><span class="dk">Nombre</span><span class="dv" style="font-family:var(--font)">${u.name||"—"}</span></div>
+      <div class="dr"><span class="dk">Email</span><span class="dv">${u.email||"—"}</span></div>
+      <div class="dr"><span class="dk">Rol</span><span class="dv">${rolePill(u.role)}</span></div>
+      <div class="dr"><span class="dk">Verificado</span><span class="dv">${u.is_verified?'<span class="pill green">sí</span>':'<span class="pill red">no</span>'}</span></div>
+    </div>
+    <div class="ds"><div class="ds-title">Sesión</div>
+      <div class="dr"><span class="dk">Session ID</span><span class="dv">${s.session_id||"—"}</span></div>
+      <div class="dr"><span class="dk">IP</span><span class="dv">${s.ip||"—"}</span></div>
+      <div class="dr"><span class="dk">Creada</span><span class="dv">${fmtDate(s.created_at)}</span></div>
+      <div class="dr"><span class="dk">Última actividad</span><span class="dv">${fmtTime(s.last_active_at)}</span></div>
+    </div>
+    <div class="ds"><div class="ds-title">Dispositivo</div>
+      <div class="dr"><span class="dk">Nombre</span><span class="dv" style="font-family:var(--font)">${dv.device_name||"—"}</span></div>
+      <div class="dr"><span class="dk">Navegador</span><span class="dv" style="font-family:var(--font)">${dv.browser||"—"}</span></div>
+      <div class="dr"><span class="dk">OS</span><span class="dv" style="font-family:var(--font)">${dv.os||"—"}</span></div>
+      <div class="dr"><span class="dk">IP</span><span class="dv">${dv.ip||s.ip||"—"}</span></div>
+      <div class="dr"><span class="dk">Ubicación</span><span class="dv" style="font-family:var(--font)">${[dv.city,dv.country].filter(Boolean).join(", ")||"—"}</span></div>
+      <div class="dr"><span class="dk">Confiable</span><span class="dv">${dv.is_trusted?'<span class="pill green">sí</span>':'<span class="pill gray">no</span>'}</span></div>
+      <div class="dr"><span class="dk">Último visto</span><span class="dv">${dv.last_seen_at?fmtTime(dv.last_seen_at):"—"}</span></div>
+    </div>`;
+  openDrawer();
+}
+
+// — Drawer usuario
+function openUserDrawer(u) {
+  document.getElementById("drawer-title").textContent=u.name||"Usuario";
+  document.getElementById("drawer-sub").textContent=u.email||"";
+
+  const sessHtml=(u.sessions||[]).map(s=>`
+    <div class="session-item">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:500">${s.device_name||"Dispositivo desconocido"}</span>
+        <span class="pill green" style="font-size:10px">activa</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">IP: <span style="font-family:var(--mono)">${s.ip}</span></div>
+      <div style="font-size:11px;color:var(--muted)">${s.browser||""} ${s.os?"/"+s.os:""}</div>
+      ${s.city||s.country?`<div style="font-size:11px;color:var(--muted)">${[s.city,s.country].filter(Boolean).join(", ")}</div>`:""}
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Última actividad: ${fmtTime(s.last_active_at)}</div>
+    </div>`).join("")||`<div style="color:var(--muted);font-size:12px">Sin sesiones activas</div>`;
+
+  const actHtml=(u.activity||[]).map(a=>`
+    <div class="activity-item">
+      <div class="activity-dot" style="background:${a.event_type?.includes('fail')?'var(--closed)':a.event_type?.includes('login')?'var(--open)':'var(--blue)'}"></div>
+      <div class="activity-content">
+        <div class="activity-label">${a.label||a.event_type}</div>
+        <div class="activity-meta">${[fmtTime(a.created_at),a.ip,a.device_name].filter(Boolean).join(" · ")}</div>
+      </div>
+    </div>`).join("")||`<div style="color:var(--muted);font-size:12px">Sin actividad registrada</div>`;
+
+  document.getElementById("drawer-body").innerHTML=`
+    <div class="ds"><div class="ds-title">Información</div>
+      <div class="dr"><span class="dk">ID</span><span class="dv">${u.id}</span></div>
+      <div class="dr"><span class="dk">Rol</span><span class="dv">${rolePill(u.role)}</span></div>
+      <div class="dr"><span class="dk">Verificado</span><span class="dv">${u.is_verified?'<span class="pill green">sí</span>':'<span class="pill red">no</span>'}</span></div>
+      <div class="dr"><span class="dk">Proveedores</span><span class="dv" style="font-family:var(--font)">${(u.providers||[]).join(", ")||"—"}</span></div>
+      <div class="dr"><span class="dk">Productos</span><span class="dv" style="font-family:var(--font)">${(u.products||[]).join(", ")||"—"}</span></div>
+      <div class="dr"><span class="dk">Registro</span><span class="dv">${fmtDate(u.created_at)}</span></div>
+      <div class="dr"><span class="dk">Última conexión</span><span class="dv">${u.last_seen_at?fmtTime(u.last_seen_at):"—"}</span></div>
+      <div class="dr"><span class="dk">Última IP</span><span class="dv">${u.last_ip||"—"}</span></div>
+      <div class="dr"><span class="dk">Último dispositivo</span><span class="dv" style="font-family:var(--font)">${u.last_device||"—"}</span></div>
+    </div>
+    <div class="ds"><div class="ds-title">Sesiones activas (${(u.sessions||[]).length})</div>${sessHtml}</div>
+    <div class="ds"><div class="ds-title">Actividad reciente</div>${actHtml}</div>`;
+  openDrawer();
+}
+
+function openDrawer(scroll=true) {
+  document.getElementById("overlay").classList.add("open");
+  document.getElementById("drawer").classList.add("open");
+  if (scroll) document.getElementById("drawer").scrollTop=0;
+}
+function closeDrawer() {
+  _selectedEv=null;
+  document.getElementById("overlay").classList.remove("open");
+  document.getElementById("drawer").classList.remove("open");
+}
+
+// ── Arranque ──────────────────────────────────────────────────────────────
+loadAll();
+setInterval(loadAll, 10000);
 </script>
 </body>
 </html>

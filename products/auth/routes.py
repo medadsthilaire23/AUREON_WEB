@@ -1,11 +1,13 @@
 # products/auth/routes.py
 # ══════════════════════════════════════════════════════════════════════════════
-# Blueprint principal de autenticación AUREON.
+# Blueprint principal de autenticacion AUREON v3.2
 #
-# v3.1 — control_status actualizado:
-#   - active_ops / avg_latency_ms para todos los gates
-#   - events_by_gate — eventos recientes por gate con camino parseado
-#   - Fusión de gates desde GateRegistry + conductor._gates
+# Nuevos endpoints de control:
+#   GET /control/dashboard     — sirve el HTML del dashboard
+#   GET /control/status        — estado del sistema de control (gates, breakers, registry)
+#   GET /control/sessions      — sesiones activas con usuario, IP, dispositivo
+#   GET /control/users         — usuarios con sesiones y actividad reciente
+#   GET /control/activity      — actividad global reciente
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
@@ -17,7 +19,7 @@ from flask import Blueprint, jsonify, request, g, render_template, session, redi
 from shared.db import db
 from products.auth.models import (
     User, UserIdentity, UserDevice,
-    UserSession, UserProduct,
+    UserSession, UserProduct, UserActivity,
 )
 from products.auth.utils import (
     create_access_token, create_refresh_token,
@@ -36,7 +38,8 @@ from products.auth.email import (
 
 log = logging.getLogger("aureon.auth")
 
-_AUTH_DIR = os.path.dirname(os.path.abspath(__file__))
+_AUTH_DIR    = os.path.dirname(os.path.abspath(__file__))
+_STATIC_ADMIN = os.path.abspath(os.path.join(_AUTH_DIR, '..', '..', 'static', 'admin'))
 
 auth_bp = Blueprint(
     "auth",
@@ -51,32 +54,23 @@ from shared.auth_middleware import require_auth, require_verified  # noqa: E402
 
 _verification_tokens: dict = {}
 _reset_tokens: dict        = {}
-
-# ── Ruta absoluta al directorio static/admin ──────────────────────────────
-_STATIC_ADMIN = os.path.abspath(
-    os.path.join(_AUTH_DIR, '..', '..', 'static', 'admin')
-)
-
-# ── DbGate — inyectado en Fase 2 desde wiring.py ──────────────────────────
-_db_gate = None
+_db_gate                   = None
 
 
 def set_db_gate(gate) -> None:
-    """Llamado desde wiring.py en Fase 2."""
     global _db_gate
     _db_gate = gate
 
 
 # ══════════════════════════════════════════════════════════
-# HELPERS INTERNOS
+# HELPERS
 # ══════════════════════════════════════════════════════════
 
 def _create_session(user: User, device_info: dict) -> tuple:
     device = None
     if device_info.get("fingerprint"):
         device = UserDevice.query.filter_by(
-            user_id=user.id,
-            fingerprint=device_info["fingerprint"],
+            user_id=user.id, fingerprint=device_info["fingerprint"]
         ).first()
 
     if not device:
@@ -86,20 +80,14 @@ def _create_session(user: User, device_info: dict) -> tuple:
 
     device.last_seen_at = datetime.now(timezone.utc)
 
-    sess = UserSession(
-        user_id=user.id,
-        device_id=device.id,
-        ip=device_info["ip"],
-    )
+    sess = UserSession(user_id=user.id, device_id=device.id, ip=device_info["ip"])
     db.session.add(sess)
     db.session.flush()
 
     access_token  = create_access_token(user.id, sess.id)
     refresh_token = create_refresh_token(user.id, sess.id)
-
     sess.token_hash   = hash_token(access_token)
     sess.refresh_hash = hash_token(refresh_token)
-
     db.session.commit()
 
     return access_token, refresh_token, sess, device
@@ -113,34 +101,6 @@ def _tokens_response(access_token: str, refresh_token: str, user: User) -> dict:
         "user":          user.to_dict(),
     }
 
-
-# ══════════════════════════════════════════════════════════
-# PÁGINAS HTML
-# ══════════════════════════════════════════════════════════
-
-@auth_bp.route("/login", methods=["GET"])
-def login_page():
-    return render_template("login.html", redirect=request.args.get("redirect", "/"))
-
-
-@auth_bp.route("/register", methods=["GET"])
-def register_page():
-    return render_template("register.html", redirect=request.args.get("redirect", "/"))
-
-
-@auth_bp.route("/consent-page", methods=["GET"])
-def consent_page():
-    return render_template("consent.html")
-
-
-@auth_bp.route("/devices-page", methods=["GET"])
-def devices_page():
-    return render_template("devices.html")
-
-
-# ══════════════════════════════════════════════════════════
-# CONTROL — inspección del subsistema en vivo
-# ══════════════════════════════════════════════════════════
 
 def _snap_to_dict(snap) -> dict:
     if isinstance(snap, dict):
@@ -162,6 +122,31 @@ def _check_admin_token() -> bool:
     return incoming == admin_token
 
 
+# ══════════════════════════════════════════════════════════
+# PAGINAS HTML
+# ══════════════════════════════════════════════════════════
+
+@auth_bp.route("/login",       methods=["GET"])
+def login_page():
+    return render_template("login.html", redirect=request.args.get("redirect", "/"))
+
+@auth_bp.route("/register",    methods=["GET"])
+def register_page():
+    return render_template("register.html", redirect=request.args.get("redirect", "/"))
+
+@auth_bp.route("/consent-page", methods=["GET"])
+def consent_page():
+    return render_template("consent.html")
+
+@auth_bp.route("/devices-page", methods=["GET"])
+def devices_page():
+    return render_template("devices.html")
+
+
+# ══════════════════════════════════════════════════════════
+# CONTROL — DASHBOARD
+# ══════════════════════════════════════════════════════════
+
 @auth_bp.get("/control/dashboard")
 def control_dashboard():
     if not _check_admin_token():
@@ -171,62 +156,50 @@ def control_dashboard():
 
 @auth_bp.get("/control/status")
 def control_status():
-    """
-    Estado en vivo del subsistema de control.
-    Protegido con ADMIN_TOKEN via X-Admin-Token header o ?token= query param.
-
-    v3.1:
-      - active_ops / avg_latency_ms para todos los gates (0 es valor válido)
-      - events_by_gate — eventos recientes agrupados por gate con camino parseado
-      - Fusión de gates desde GateRegistry + conductor._gates
-    """
     if not _check_admin_token():
         return jsonify({"error": "No autorizado"}), 403
 
     from shared.control.registries.base import BreakerRegistry, GateRegistry, EventRegistry
     from products.auth.context import auth_context
 
-    # ── Breakers ──────────────────────────────────────────────────────────────
+    # Breakers
     breakers = []
     for snap in BreakerRegistry.all_snapshots():
         s = _snap_to_dict(snap)
+        state = s.get("state")
         breakers.append({
             "name":       s.get("name"),
-            "state":      s.get("state").value if hasattr(s.get("state"), "value") else s.get("state"),
+            "state":      state.value if hasattr(state, "value") else state,
             "gate_name":  s.get("gate_name"),
             "trigger_op": s.get("trigger_op"),
             "forced":     s.get("forced", False),
         })
 
-    # ── Gates — con active_ops y avg_latency_ms para todos ───────────────────
-    # Los gates concretos (HttpGate, DbGate, ModuleGate, BootGate) exponen
-    # active_ops / active_calls y avg_latency_ms en su snapshot.
-    # Los feature-flag gates (oauth_google, etc.) no los tienen → None → "—".
+    # Gates — desde GateRegistry
     gates_map: dict = {}
     for snap in GateRegistry.all_snapshots():
-        s = _snap_to_dict(snap)
-        name   = s.get("name")
+        s    = _snap_to_dict(snap)
+        name = s.get("name")
         active = s.get("active_ops") if s.get("active_ops") is not None else s.get("active_calls")
         gates_map[name] = {
             "name":           name,
             "enabled":        s.get("enabled"),
-            "pass_count":     s.get("pass_count", 0),
-            "fail_count":     s.get("fail_count", 0),
+            "pass_count":     s.get("pass_count", 0) or 0,
+            "fail_count":     s.get("fail_count", 0) or 0,
             "active_ops":     active,
             "avg_latency_ms": s.get("avg_latency_ms"),
         }
 
-    # ── Conductor ─────────────────────────────────────────────────────────────
+    # Conductor
     conductor_status = None
     if auth_context.conductor:
         try:
             conductor_status = auth_context.conductor.status()
         except Exception as e:
-            log.exception("[control/status] conductor.status() falló")
+            log.exception("[control/status] conductor.status() fallo")
             conductor_status = {"error": str(e), "type": type(e).__name__}
 
-        # Fusionar gates concretos del conductor (HttpGate, DbGate, etc.)
-        # Estos tienen active_ops y avg_latency_ms que los feature-flag gates no tienen
+        # Enriquecer gates con datos del conductor (gates concretos tienen mas campos)
         if conductor_status and isinstance(conductor_status.get("gates"), dict):
             for gate_name, gate_data in conductor_status["gates"].items():
                 if not isinstance(gate_data, dict):
@@ -237,50 +210,40 @@ def control_status():
                     else gate_data.get("active_calls")
                 )
                 if gate_name not in gates_map:
-                    # Gate concreto no registrado en GateRegistry — añadirlo
                     gates_map[gate_name] = {
                         "name":           gate_name,
                         "enabled":        gate_data.get("enabled"),
-                        "pass_count":     gate_data.get("pass_count", 0),
-                        "fail_count":     gate_data.get("fail_count", 0),
+                        "pass_count":     gate_data.get("pass_count", 0) or 0,
+                        "fail_count":     gate_data.get("fail_count", 0) or 0,
                         "active_ops":     active,
                         "avg_latency_ms": gate_data.get("avg_latency_ms"),
                     }
                 else:
-                    # Enriquecer con datos del conductor si el GateRegistry
-                    # devolvió None para estos campos
                     entry = gates_map[gate_name]
                     if entry["active_ops"] is None and active is not None:
                         entry["active_ops"] = active
                     if entry["avg_latency_ms"] is None:
                         entry["avg_latency_ms"] = gate_data.get("avg_latency_ms")
-                    if entry["pass_count"] == 0:
-                        entry["pass_count"] = gate_data.get("pass_count", 0)
-                    if entry["fail_count"] == 0:
-                        entry["fail_count"] = gate_data.get("fail_count", 0)
+                    if not entry["pass_count"]:
+                        entry["pass_count"] = gate_data.get("pass_count", 0) or 0
+                    if not entry["fail_count"]:
+                        entry["fail_count"] = gate_data.get("fail_count", 0) or 0
 
     gates = list(gates_map.values())
 
-    # ── Eventos recientes por gate (drill-down en el dashboard) ───────────────
-    # Agrupa los últimos 200 eventos del registry por gate.
-    # Cada evento incluye el camino parseado del event_id:
-    #   "20260404143022847_D" → root="20260404143022847", path=["D"]
+    # Eventos recientes por gate
     events_by_gate: dict = {}
     try:
         for ev in EventRegistry.recent(limit=200):
             gate_name = ev.get("gate", "unknown")
             if gate_name not in events_by_gate:
                 events_by_gate[gate_name] = []
-
             raw_id = ev.get("event_id", "")
             parts  = raw_id.split("_")
-            root   = parts[0]
-            path   = parts[1:] if len(parts) > 1 else []
-
             events_by_gate[gate_name].append({
                 "event_id":    raw_id,
-                "root_id":     root,
-                "path":        path,
+                "root_id":     parts[0],
+                "path":        parts[1:],
                 "op_id":       ev.get("op_id"),
                 "state":       ev.get("state"),
                 "duration_ms": ev.get("duration_ms"),
@@ -289,12 +252,11 @@ def control_status():
     except Exception as e:
         log.error("[control/status] events_by_gate error: %s", e)
 
-    # ── Sesiones activas ──────────────────────────────────────────────────────
+    # Sesiones activas
     try:
         active_sessions = UserSession.query.filter_by(revoked_at=None).count()
         active_users    = db.session.query(UserSession.user_id)\
-                            .filter_by(revoked_at=None)\
-                            .distinct().count()
+                            .filter_by(revoked_at=None).distinct().count()
     except Exception:
         active_sessions = None
         active_users    = None
@@ -310,90 +272,226 @@ def control_status():
     }), 200
 
 
+@auth_bp.get("/control/sessions")
+def control_sessions():
+    """Sesiones activas con usuario completo, dispositivo e IP."""
+    if not _check_admin_token():
+        return jsonify({"error": "No autorizado"}), 403
+
+    try:
+        sessions = (
+            UserSession.query
+            .filter_by(revoked_at=None)
+            .order_by(UserSession.last_active_at.desc())
+            .limit(200)
+            .all()
+        )
+
+        result = []
+        for sess in sessions:
+            user   = sess.user
+            device = sess.device
+            result.append({
+                "session_id":    sess.id,
+                "created_at":    sess.created_at.isoformat(),
+                "last_active_at": sess.last_active_at.isoformat() if sess.last_active_at else None,
+                "ip":            sess.ip,
+                "user": {
+                    "id":         user.id      if user else None,
+                    "name":       user.name    if user else "—",
+                    "email":      user.email   if user else "—",
+                    "role":       user.role    if user else "—",
+                    "is_verified": user.is_verified if user else False,
+                    "avatar_url": user.avatar_url if user else None,
+                },
+                "device": {
+                    "id":          device.id          if device else None,
+                    "device_name": device.device_name if device else "—",
+                    "browser":     device.browser     if device else "—",
+                    "os":          device.os          if device else "—",
+                    "ip":          device.ip          if device else sess.ip,
+                    "country":     device.country     if device else None,
+                    "city":        device.city        if device else None,
+                    "is_trusted":  device.is_trusted  if device else False,
+                    "last_seen_at": device.last_seen_at.isoformat()
+                                   if device and device.last_seen_at else None,
+                },
+            })
+
+        return jsonify({"sessions": result, "total": len(result)}), 200
+
+    except Exception as e:
+        log.exception("[control/sessions] error")
+        return jsonify({"error": str(e)}), 500
+
+
+@auth_bp.get("/control/users")
+def control_users():
+    """Usuarios con sus sesiones activas y actividad reciente."""
+    if not _check_admin_token():
+        return jsonify({"error": "No autorizado"}), 403
+
+    try:
+        users = (
+            User.query
+            .filter_by(is_active=True)
+            .order_by(User.created_at.desc())
+            .limit(100)
+            .all()
+        )
+
+        result = []
+        for user in users:
+            active_sessions = [s for s in user.sessions if s.is_active]
+            last_session    = max(active_sessions, key=lambda s: s.last_active_at, default=None) \
+                              if active_sessions else None
+
+            # Actividad reciente (ultimos 10 eventos)
+            recent_activity = (
+                UserActivity.query
+                .filter_by(user_id=user.id)
+                .order_by(UserActivity.created_at.desc())
+                .limit(10)
+                .all()
+            )
+
+            result.append({
+                "id":              user.id,
+                "name":            user.name,
+                "email":           user.email,
+                "role":            user.role,
+                "is_verified":     user.is_verified,
+                "avatar_url":      user.avatar_url,
+                "created_at":      user.created_at.isoformat(),
+                "active_sessions": len(active_sessions),
+                "total_devices":   len(user.devices),
+                "providers":       list({i.provider for i in user.identities}),
+                "products":        [p.product_id for p in user.products],
+                "last_seen_at":    last_session.last_active_at.isoformat()
+                                   if last_session else None,
+                "last_ip":         last_session.ip if last_session else None,
+                "last_device":     last_session.device.device_name
+                                   if last_session and last_session.device else None,
+                "sessions": [
+                    {
+                        "session_id":    s.id,
+                        "ip":            s.ip,
+                        "last_active_at": s.last_active_at.isoformat(),
+                        "created_at":    s.created_at.isoformat(),
+                        "device_name":   s.device.device_name if s.device else "—",
+                        "browser":       s.device.browser     if s.device else "—",
+                        "os":            s.device.os          if s.device else "—",
+                        "country":       s.device.country     if s.device else None,
+                        "city":          s.device.city        if s.device else None,
+                        "is_trusted":    s.device.is_trusted  if s.device else False,
+                    }
+                    for s in active_sessions
+                ],
+                "activity": [a.to_dict() for a in recent_activity],
+            })
+
+        return jsonify({"users": result, "total": len(result)}), 200
+
+    except Exception as e:
+        log.exception("[control/users] error")
+        return jsonify({"error": str(e)}), 500
+
+
+@auth_bp.get("/control/activity")
+def control_activity():
+    """Actividad global reciente — todos los usuarios."""
+    if not _check_admin_token():
+        return jsonify({"error": "No autorizado"}), 403
+
+    try:
+        limit = min(int(request.args.get("limit", 100)), 500)
+        activities = (
+            UserActivity.query
+            .order_by(UserActivity.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        result = []
+        for act in activities:
+            user = act.user
+            result.append({
+                **act.to_dict(),
+                "user": {
+                    "id":    user.id    if user else None,
+                    "name":  user.name  if user else "—",
+                    "email": user.email if user else "—",
+                },
+            })
+
+        return jsonify({"activity": result, "total": len(result)}), 200
+
+    except Exception as e:
+        log.exception("[control/activity] error")
+        return jsonify({"error": str(e)}), 500
+
+
 # ══════════════════════════════════════════════════════════
 # REGISTER
 # ══════════════════════════════════════════════════════════
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
-    body = request.get_json(silent=True) or {}
-
+    body     = request.get_json(silent=True) or {}
     name     = (body.get("name")     or "").strip()
     email    = (body.get("email")    or "").strip().lower()
     password =  body.get("password") or ""
 
     if not name or not email or not password:
         return jsonify({"error": "name, email y password son requeridos"}), 400
-
     if "@" not in email:
-        return jsonify({"error": "Email inválido"}), 400
+        return jsonify({"error": "Email invalido"}), 400
 
     errors = validate_password_strength(password)
     if errors:
-        return jsonify({"error": "Contraseña débil", "details": errors}), 400
+        return jsonify({"error": "Contrasena debil", "details": errors}), 400
 
-    # OP002_002 — crear usuario en DB
     try:
         if _db_gate is not None:
-            with _db_gate.scan("OP002_002", parent_event_id=getattr(g, "event_id", None)):
+            with _db_gate.scan("OP002_002"):
                 if User.query.filter_by(email=email).first():
-                    return jsonify({"error": "Este email ya está registrado"}), 409
-
-                user = User(name=name, email=email)
+                    return jsonify({"error": "Este email ya esta registrado"}), 409
+                user     = User(name=name, email=email)
                 db.session.add(user)
                 db.session.flush()
-
-                identity = UserIdentity(
-                    user_id=user.id,
-                    provider="aureon",
-                    provider_id=email,
-                    password_hash=hash_password(password),
-                )
+                identity = UserIdentity(user_id=user.id, provider="aureon",
+                                        provider_id=email, password_hash=hash_password(password))
                 db.session.add(identity)
-
-                product = UserProduct(user_id=user.id, product_id="lifebound")
-                db.session.add(product)
+                db.session.add(UserProduct(user_id=user.id, product_id="lifebound"))
         else:
             if User.query.filter_by(email=email).first():
-                return jsonify({"error": "Este email ya está registrado"}), 409
-
-            user = User(name=name, email=email)
+                return jsonify({"error": "Este email ya esta registrado"}), 409
+            user     = User(name=name, email=email)
             db.session.add(user)
             db.session.flush()
-
-            identity = UserIdentity(
-                user_id=user.id,
-                provider="aureon",
-                provider_id=email,
-                password_hash=hash_password(password),
-            )
+            identity = UserIdentity(user_id=user.id, provider="aureon",
+                                    provider_id=email, password_hash=hash_password(password))
             db.session.add(identity)
-
-            product = UserProduct(user_id=user.id, product_id="lifebound")
-            db.session.add(product)
-
+            db.session.add(UserProduct(user_id=user.id, product_id="lifebound"))
     except Exception as e:
         db.session.rollback()
         log.error("Register DB error: %s", e)
         return jsonify({"error": "Error al crear la cuenta"}), 500
 
-    # OP002_004 — crear sesión en DB
     try:
         device_info = parse_device(request)
         if _db_gate is not None:
-            with _db_gate.scan("OP002_004", parent_event_id=getattr(g, "event_id", None)):
+            with _db_gate.scan("OP002_004"):
                 access_token, refresh_token, sess, device = _create_session(user, device_info)
         else:
             access_token, refresh_token, sess, device = _create_session(user, device_info)
-
     except Exception as e:
         log.error("Register session error: %s", e)
-        return jsonify({"error": "Error al crear la sesión"}), 500
+        return jsonify({"error": "Error al crear la sesion"}), 500
 
     token = generate_verification_token()
     _verification_tokens[token] = user.id
     send_verification_email(email, name, token)
-
     log.info("Usuario registrado: %s", email)
     return jsonify(_tokens_response(access_token, refresh_token, user)), 201
 
@@ -404,56 +502,45 @@ def register():
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    body = request.get_json(silent=True) or {}
-
+    body     = request.get_json(silent=True) or {}
     email    = (body.get("email")    or "").strip().lower()
     password =  body.get("password") or ""
 
     if not email or not password:
         return jsonify({"error": "email y password son requeridos"}), 400
 
-    # OP001_002 — buscar usuario en DB
     try:
         if _db_gate is not None:
-            with _db_gate.scan("OP001_002", parent_event_id=getattr(g, "event_id", None)):
-                user = User.query.filter_by(email=email, is_active=True).first()
+            with _db_gate.scan("OP001_002"):
+                user     = User.query.filter_by(email=email, is_active=True).first()
                 identity = UserIdentity.query.filter_by(
-                    user_id=user.id, provider="aureon"
-                ).first() if user else None
+                    user_id=user.id, provider="aureon").first() if user else None
         else:
-            user = User.query.filter_by(email=email, is_active=True).first()
+            user     = User.query.filter_by(email=email, is_active=True).first()
             identity = UserIdentity.query.filter_by(
-                user_id=user.id, provider="aureon"
-            ).first() if user else None
-
+                user_id=user.id, provider="aureon").first() if user else None
     except Exception as e:
         log.error("Login DB error: %s", e)
         return jsonify({"error": "Error al verificar credenciales"}), 500
 
     if not user or not identity or not verify_password(password, identity.password_hash):
-        return jsonify({"error": "Credenciales inválidas"}), 401
+        return jsonify({"error": "Credenciales invalidas"}), 401
 
     device_info = parse_device(request)
     new_device  = is_new_device(user, device_info)
 
-    # OP001_003 — crear sesión en DB
     try:
         if _db_gate is not None:
-            with _db_gate.scan("OP001_003", parent_event_id=getattr(g, "event_id", None)):
+            with _db_gate.scan("OP001_003"):
                 access_token, refresh_token, sess, device = _create_session(user, device_info)
         else:
             access_token, refresh_token, sess, device = _create_session(user, device_info)
-
     except Exception as e:
         log.error("Login session error: %s", e)
-        return jsonify({"error": "Error al crear la sesión"}), 500
+        return jsonify({"error": "Error al crear la sesion"}), 500
 
     if new_device:
-        send_new_device_alert(
-            user.email, user.name,
-            device_info["device_name"],
-            device_info["ip"],
-        )
+        send_new_device_alert(user.email, user.name, device_info["device_name"], device_info["ip"])
 
     log.info("Login exitoso: %s", email)
     return jsonify(_tokens_response(access_token, refresh_token, user)), 200
@@ -469,7 +556,7 @@ def logout():
     g.session.revoke()
     db.session.commit()
     log.info("Logout: user=%s session=%s", g.user_id, g.session_id)
-    return jsonify({"message": "Sesión cerrada"}), 200
+    return jsonify({"message": "Sesion cerrada"}), 200
 
 
 # ══════════════════════════════════════════════════════════
@@ -487,19 +574,15 @@ def refresh():
     try:
         payload = decode_token(refresh_token)
     except Exception:
-        return jsonify({"error": "Refresh token inválido o expirado"}), 401
+        return jsonify({"error": "Refresh token invalido o expirado"}), 401
 
     if payload.get("type") != "refresh":
-        return jsonify({"error": "Tipo de token inválido"}), 401
+        return jsonify({"error": "Tipo de token invalido"}), 401
 
-    refresh_hash = hash_token(refresh_token)
     sess = UserSession.query.filter_by(
-        refresh_hash=refresh_hash,
-        revoked_at=None,
-    ).first()
-
+        refresh_hash=hash_token(refresh_token), revoked_at=None).first()
     if not sess:
-        return jsonify({"error": "Sesión inválida o revocada"}), 401
+        return jsonify({"error": "Sesion invalida o revocada"}), 401
 
     user = User.query.get(sess.user_id)
     if not user or not user.is_active:
@@ -514,24 +597,20 @@ def refresh():
 
 
 # ══════════════════════════════════════════════════════════
-# VERIFICACIÓN DE EMAIL
+# VERIFICACION DE EMAIL
 # ══════════════════════════════════════════════════════════
 
 @auth_bp.route("/verify-email", methods=["GET"])
 def verify_email():
     token   = request.args.get("token", "")
     user_id = _verification_tokens.pop(token, None)
-
     if not user_id:
-        return jsonify({"error": "Token inválido o expirado"}), 400
-
+        return jsonify({"error": "Token invalido o expirado"}), 400
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
-
     user.is_verified = True
     db.session.commit()
-
     log.info("Email verificado: %s", user.email)
     return jsonify({"message": "Email verificado correctamente"}), 200
 
@@ -541,30 +620,27 @@ def verify_email():
 def resend_verification():
     user = User.query.get(g.user_id)
     if user.is_verified:
-        return jsonify({"message": "El email ya está verificado"}), 200
-
+        return jsonify({"message": "El email ya esta verificado"}), 200
     token = generate_verification_token()
     _verification_tokens[token] = user.id
     send_verification_email(user.email, user.name, token)
-    return jsonify({"message": "Email de verificación reenviado"}), 200
+    return jsonify({"message": "Email de verificacion reenviado"}), 200
 
 
 # ══════════════════════════════════════════════════════════
-# RESET DE CONTRASEÑA
+# RESET DE CONTRASENA
 # ══════════════════════════════════════════════════════════
 
 @auth_bp.route("/forgot-password", methods=["POST"])
 def forgot_password():
     body  = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
-
-    user = User.query.filter_by(email=email).first()
+    user  = User.query.filter_by(email=email).first()
     if user:
         token = generate_reset_token()
         _reset_tokens[token] = user.id
         send_reset_password_email(user.email, user.name, token)
-
-    return jsonify({"message": "Si el email existe, recibirás instrucciones"}), 200
+    return jsonify({"message": "Si el email existe, recibiras instrucciones"}), 200
 
 
 @auth_bp.route("/reset-password", methods=["POST"])
@@ -575,27 +651,22 @@ def reset_password():
 
     user_id = _reset_tokens.pop(token, None)
     if not user_id:
-        return jsonify({"error": "Token inválido o expirado"}), 400
+        return jsonify({"error": "Token invalido o expirado"}), 400
 
     errors = validate_password_strength(password)
     if errors:
-        return jsonify({"error": "Contraseña débil", "details": errors}), 400
+        return jsonify({"error": "Contrasena debil", "details": errors}), 400
 
-    identity = UserIdentity.query.filter_by(
-        user_id=user_id, provider="aureon"
-    ).first()
+    identity = UserIdentity.query.filter_by(user_id=user_id, provider="aureon").first()
     if not identity:
         return jsonify({"error": "Cuenta no encontrada"}), 404
 
     identity.password_hash = hash_password(password)
-
-    UserSession.query.filter_by(
-        user_id=user_id, revoked_at=None
-    ).update({"revoked_at": datetime.now(timezone.utc)})
-
+    UserSession.query.filter_by(user_id=user_id, revoked_at=None).update(
+        {"revoked_at": datetime.now(timezone.utc)})
     db.session.commit()
-    log.info("Contraseña reseteada: user=%s", user_id)
-    return jsonify({"message": "Contraseña actualizada. Inicia sesión de nuevo."}), 200
+    log.info("Contrasena reseteada: user=%s", user_id)
+    return jsonify({"message": "Contrasena actualizada. Inicia sesion de nuevo."}), 200
 
 
 # ══════════════════════════════════════════════════════════
@@ -608,10 +679,9 @@ def me():
     user = User.query.get(g.user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
-
-    data = user.to_dict()
+    data             = user.to_dict()
     data["products"] = [p.to_dict() for p in user.products]
-    data["passkeys"]  = [pk.to_dict() for pk in user.passkeys]
+    data["passkeys"] = [pk.to_dict() for pk in user.passkeys]
     return jsonify(data), 200
 
 
@@ -625,7 +695,6 @@ def list_sessions():
     sessions = UserSession.query.filter_by(
         user_id=g.user_id, revoked_at=None
     ).order_by(UserSession.last_active_at.desc()).all()
-
     return jsonify({
         "sessions":        [s.to_dict() for s in sessions],
         "current_session": g.session_id,
@@ -636,26 +705,20 @@ def list_sessions():
 @require_auth
 def revoke_session(session_id):
     sess = UserSession.query.filter_by(
-        id=session_id, user_id=g.user_id, revoked_at=None
-    ).first()
-
+        id=session_id, user_id=g.user_id, revoked_at=None).first()
     if not sess:
-        return jsonify({"error": "Sesión no encontrada"}), 404
-
+        return jsonify({"error": "Sesion no encontrada"}), 404
     sess.revoke()
     db.session.commit()
-    return jsonify({"message": "Sesión cerrada"}), 200
+    return jsonify({"message": "Sesion cerrada"}), 200
 
 
 @auth_bp.route("/sessions", methods=["DELETE"])
 @require_auth
 def revoke_all_sessions():
     user = User.query.get(g.user_id)
-
-    UserSession.query.filter_by(
-        user_id=g.user_id, revoked_at=None
-    ).update({"revoked_at": datetime.now(timezone.utc)})
-
+    UserSession.query.filter_by(user_id=g.user_id, revoked_at=None).update(
+        {"revoked_at": datetime.now(timezone.utc)})
     db.session.commit()
     send_sessions_revoked_email(user.email, user.name)
     log.info("Todas las sesiones revocadas: user=%s", g.user_id)
@@ -670,22 +733,16 @@ def revoke_all_sessions():
 @require_auth
 def list_devices():
     devices = UserDevice.query.filter_by(
-        user_id=g.user_id
-    ).order_by(UserDevice.last_seen_at.desc()).all()
-
+        user_id=g.user_id).order_by(UserDevice.last_seen_at.desc()).all()
     return jsonify({"devices": [d.to_dict() for d in devices]}), 200
 
 
 @auth_bp.route("/devices/<device_id>/trust", methods=["PATCH"])
 @require_auth
 def trust_device(device_id):
-    device = UserDevice.query.filter_by(
-        id=device_id, user_id=g.user_id
-    ).first()
-
+    device = UserDevice.query.filter_by(id=device_id, user_id=g.user_id).first()
     if not device:
         return jsonify({"error": "Dispositivo no encontrado"}), 404
-
     device.is_trusted = True
     db.session.commit()
     return jsonify({"message": "Dispositivo marcado como confiable"}), 200
@@ -694,17 +751,12 @@ def trust_device(device_id):
 @auth_bp.route("/devices/<device_id>", methods=["DELETE"])
 @require_auth
 def delete_device(device_id):
-    device = UserDevice.query.filter_by(
-        id=device_id, user_id=g.user_id
-    ).first()
-
+    device = UserDevice.query.filter_by(id=device_id, user_id=g.user_id).first()
     if not device:
         return jsonify({"error": "Dispositivo no encontrado"}), 404
-
     for sess in device.sessions:
         if sess.is_active:
             sess.revoke()
-
     db.session.delete(device)
     db.session.commit()
     return jsonify({"message": "Dispositivo eliminado y sesiones cerradas"}), 200
@@ -718,7 +770,6 @@ def delete_device(device_id):
 def consent():
     product_id  = request.args.get("product_id", "")
     redirect_to = request.args.get("redirect", "/")
-
     user = None
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
@@ -727,13 +778,11 @@ def consent():
             payload = decode_token(token)
             if payload.get("type") == "access":
                 sess = UserSession.query.filter_by(
-                    token_hash=hash_token(token), revoked_at=None
-                ).first()
+                    token_hash=hash_token(token), revoked_at=None).first()
                 if sess:
                     user = User.query.get(payload["sub"])
         except Exception:
             pass
-
     return jsonify({
         "product_id":    product_id,
         "redirect":      redirect_to,
@@ -747,19 +796,12 @@ def consent():
 def grant_product():
     body       = request.get_json(silent=True) or {}
     product_id = body.get("product_id", "").strip()
-
     if not product_id:
         return jsonify({"error": "product_id requerido"}), 400
-
-    existing = UserProduct.query.filter_by(
-        user_id=g.user_id, product_id=product_id
-    ).first()
-
+    existing = UserProduct.query.filter_by(user_id=g.user_id, product_id=product_id).first()
     if not existing:
-        up = UserProduct(user_id=g.user_id, product_id=product_id)
-        db.session.add(up)
+        db.session.add(UserProduct(user_id=g.user_id, product_id=product_id))
         db.session.commit()
-
     return jsonify({"message": f"Acceso concedido a {product_id}"}), 200
 
 
@@ -772,22 +814,17 @@ def oauth_complete():
     access_token   = session.pop("oauth_access_token",   "")
     refresh_token  = session.pop("oauth_refresh_token",  "")
     final_redirect = session.pop("oauth_final_redirect", "/")
-
     if not access_token:
         return redirect("/auth/login")
-
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Conectando...</title></head>
-<body>
-<script>
+<body><script>
   localStorage.setItem('aureon_token',   '{access_token}');
   localStorage.setItem('aureon_refresh', '{refresh_token}');
   var dest = '{final_redirect}';
   if (dest.indexOf('access_token') !== -1) dest = '/';
   window.location.replace(dest);
 </script>
-<p style="font-family:sans-serif;text-align:center;padding:40px;color:#94a3b8">
-  Conectando con Aureon...
-</p>
+<p style="font-family:sans-serif;text-align:center;padding:40px;color:#94a3b8">Conectando con Aureon...</p>
 </body></html>"""
     return html, 200, {"Content-Type": "text/html"}
