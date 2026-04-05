@@ -2,9 +2,10 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # Blueprint principal de autenticación AUREON.
 #
-# v3 — DbGate checkpoints en:
-#      login     → OP001_002 (user lookup) + OP001_003 (session create)
-#      register  → OP002_002 (user create) + OP002_004 (session create)
+# v3.1 — control_status actualizado:
+#   - active_ops / avg_latency_ms para todos los gates
+#   - events_by_gate — eventos recientes por gate con camino parseado
+#   - Fusión de gates desde GateRegistry + conductor._gates
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
@@ -51,7 +52,7 @@ from shared.auth_middleware import require_auth, require_verified  # noqa: E402
 _verification_tokens: dict = {}
 _reset_tokens: dict        = {}
 
-# ── Ruta absoluta al directorio static/admin ─────────────────────────────
+# ── Ruta absoluta al directorio static/admin ──────────────────────────────
 _STATIC_ADMIN = os.path.abspath(
     os.path.join(_AUTH_DIR, '..', '..', 'static', 'admin')
 )
@@ -173,36 +174,49 @@ def control_status():
     """
     Estado en vivo del subsistema de control.
     Protegido con ADMIN_TOKEN via X-Admin-Token header o ?token= query param.
+
+    v3.1:
+      - active_ops / avg_latency_ms para todos los gates (0 es valor válido)
+      - events_by_gate — eventos recientes agrupados por gate con camino parseado
+      - Fusión de gates desde GateRegistry + conductor._gates
     """
     if not _check_admin_token():
         return jsonify({"error": "No autorizado"}), 403
 
-    from shared.control.registries.base import BreakerRegistry, GateRegistry
+    from shared.control.registries.base import BreakerRegistry, GateRegistry, EventRegistry
     from products.auth.context import auth_context
 
+    # ── Breakers ──────────────────────────────────────────────────────────────
     breakers = []
     for snap in BreakerRegistry.all_snapshots():
         s = _snap_to_dict(snap)
         breakers.append({
-            "name":        s.get("name"),
-            "state":       s.get("state").value if hasattr(s.get("state"), "value") else s.get("state"),
-            "gate_name":   s.get("gate_name"),
-            "trigger_op":  s.get("trigger_op"),
-            "forced":      s.get("forced", False),
+            "name":       s.get("name"),
+            "state":      s.get("state").value if hasattr(s.get("state"), "value") else s.get("state"),
+            "gate_name":  s.get("gate_name"),
+            "trigger_op": s.get("trigger_op"),
+            "forced":     s.get("forced", False),
         })
 
-    gates = []
+    # ── Gates — con active_ops y avg_latency_ms para todos ───────────────────
+    # Los gates concretos (HttpGate, DbGate, ModuleGate, BootGate) exponen
+    # active_ops / active_calls y avg_latency_ms en su snapshot.
+    # Los feature-flag gates (oauth_google, etc.) no los tienen → None → "—".
+    gates_map: dict = {}
     for snap in GateRegistry.all_snapshots():
         s = _snap_to_dict(snap)
-        gates.append({
-            "name":           s.get("name"),
+        name   = s.get("name")
+        active = s.get("active_ops") if s.get("active_ops") is not None else s.get("active_calls")
+        gates_map[name] = {
+            "name":           name,
             "enabled":        s.get("enabled"),
-            "pass_count":     s.get("pass_count"),
-            "fail_count":     s.get("fail_count"),
-            "active_ops":     s.get("active_ops") or s.get("active_calls"),
+            "pass_count":     s.get("pass_count", 0),
+            "fail_count":     s.get("fail_count", 0),
+            "active_ops":     active,
             "avg_latency_ms": s.get("avg_latency_ms"),
-        })
+        }
 
+    # ── Conductor ─────────────────────────────────────────────────────────────
     conductor_status = None
     if auth_context.conductor:
         try:
@@ -211,6 +225,71 @@ def control_status():
             log.exception("[control/status] conductor.status() falló")
             conductor_status = {"error": str(e), "type": type(e).__name__}
 
+        # Fusionar gates concretos del conductor (HttpGate, DbGate, etc.)
+        # Estos tienen active_ops y avg_latency_ms que los feature-flag gates no tienen
+        if conductor_status and isinstance(conductor_status.get("gates"), dict):
+            for gate_name, gate_data in conductor_status["gates"].items():
+                if not isinstance(gate_data, dict):
+                    continue
+                active = (
+                    gate_data.get("active_ops")
+                    if gate_data.get("active_ops") is not None
+                    else gate_data.get("active_calls")
+                )
+                if gate_name not in gates_map:
+                    # Gate concreto no registrado en GateRegistry — añadirlo
+                    gates_map[gate_name] = {
+                        "name":           gate_name,
+                        "enabled":        gate_data.get("enabled"),
+                        "pass_count":     gate_data.get("pass_count", 0),
+                        "fail_count":     gate_data.get("fail_count", 0),
+                        "active_ops":     active,
+                        "avg_latency_ms": gate_data.get("avg_latency_ms"),
+                    }
+                else:
+                    # Enriquecer con datos del conductor si el GateRegistry
+                    # devolvió None para estos campos
+                    entry = gates_map[gate_name]
+                    if entry["active_ops"] is None and active is not None:
+                        entry["active_ops"] = active
+                    if entry["avg_latency_ms"] is None:
+                        entry["avg_latency_ms"] = gate_data.get("avg_latency_ms")
+                    if entry["pass_count"] == 0:
+                        entry["pass_count"] = gate_data.get("pass_count", 0)
+                    if entry["fail_count"] == 0:
+                        entry["fail_count"] = gate_data.get("fail_count", 0)
+
+    gates = list(gates_map.values())
+
+    # ── Eventos recientes por gate (drill-down en el dashboard) ───────────────
+    # Agrupa los últimos 200 eventos del registry por gate.
+    # Cada evento incluye el camino parseado del event_id:
+    #   "20260404143022847_D" → root="20260404143022847", path=["D"]
+    events_by_gate: dict = {}
+    try:
+        for ev in EventRegistry.recent(limit=200):
+            gate_name = ev.get("gate", "unknown")
+            if gate_name not in events_by_gate:
+                events_by_gate[gate_name] = []
+
+            raw_id = ev.get("event_id", "")
+            parts  = raw_id.split("_")
+            root   = parts[0]
+            path   = parts[1:] if len(parts) > 1 else []
+
+            events_by_gate[gate_name].append({
+                "event_id":    raw_id,
+                "root_id":     root,
+                "path":        path,
+                "op_id":       ev.get("op_id"),
+                "state":       ev.get("state"),
+                "duration_ms": ev.get("duration_ms"),
+                "error":       ev.get("error"),
+            })
+    except Exception as e:
+        log.error("[control/status] events_by_gate error: %s", e)
+
+    # ── Sesiones activas ──────────────────────────────────────────────────────
     try:
         active_sessions = UserSession.query.filter_by(revoked_at=None).count()
         active_users    = db.session.query(UserSession.user_id)\
@@ -227,6 +306,7 @@ def control_status():
         "context":         auth_context.snapshot(),
         "active_sessions": active_sessions,
         "active_users":    active_users,
+        "events_by_gate":  events_by_gate,
     }), 200
 
 
@@ -255,7 +335,7 @@ def register():
     # OP002_002 — crear usuario en DB
     try:
         if _db_gate is not None:
-            with _db_gate.scan("OP002_002"):
+            with _db_gate.scan("OP002_002", parent_event_id=getattr(g, "event_id", None)):
                 if User.query.filter_by(email=email).first():
                     return jsonify({"error": "Este email ya está registrado"}), 409
 
@@ -301,7 +381,7 @@ def register():
     try:
         device_info = parse_device(request)
         if _db_gate is not None:
-            with _db_gate.scan("OP002_004"):
+            with _db_gate.scan("OP002_004", parent_event_id=getattr(g, "event_id", None)):
                 access_token, refresh_token, sess, device = _create_session(user, device_info)
         else:
             access_token, refresh_token, sess, device = _create_session(user, device_info)
@@ -335,7 +415,7 @@ def login():
     # OP001_002 — buscar usuario en DB
     try:
         if _db_gate is not None:
-            with _db_gate.scan("OP001_002"):
+            with _db_gate.scan("OP001_002", parent_event_id=getattr(g, "event_id", None)):
                 user = User.query.filter_by(email=email, is_active=True).first()
                 identity = UserIdentity.query.filter_by(
                     user_id=user.id, provider="aureon"
@@ -359,7 +439,7 @@ def login():
     # OP001_003 — crear sesión en DB
     try:
         if _db_gate is not None:
-            with _db_gate.scan("OP001_003"):
+            with _db_gate.scan("OP001_003", parent_event_id=getattr(g, "event_id", None)):
                 access_token, refresh_token, sess, device = _create_session(user, device_info)
         else:
             access_token, refresh_token, sess, device = _create_session(user, device_info)

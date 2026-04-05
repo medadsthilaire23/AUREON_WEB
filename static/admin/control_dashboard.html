@@ -10,13 +10,16 @@
   :root {
     --bg:       #0f1117;
     --surface:  #1a1d27;
+    --surface2: #222536;
     --border:   rgba(255,255,255,0.08);
+    --border2:  rgba(255,255,255,0.14);
     --text:     #e2e8f0;
     --muted:    #64748b;
     --open:     #22c55e;
     --closed:   #ef4444;
     --warn:     #f59e0b;
     --blue:     #3b82f6;
+    --purple:   #a855f7;
     --font:     -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
@@ -36,12 +39,7 @@
     margin-bottom: 28px;
   }
 
-  header h1 {
-    font-size: 18px;
-    font-weight: 600;
-    letter-spacing: .5px;
-  }
-
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: .5px; }
   header h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 10px; }
 
   .refresh-btn {
@@ -56,7 +54,6 @@
     align-items: center;
     gap: 6px;
   }
-
   .refresh-btn:hover { border-color: rgba(255,255,255,0.2); }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px; }
@@ -88,18 +85,33 @@
     padding: 3px 10px;
     border-radius: 99px;
   }
-
-  .pill.open   { background: rgba(34,197,94,.15);  color: var(--open);   }
-  .pill.closed { background: rgba(239,68,68,.15);  color: var(--closed); }
-  .pill.warn   { background: rgba(245,158,11,.15); color: var(--warn);   }
-  .pill.blue   { background: rgba(59,130,246,.15); color: var(--blue);   }
+  .pill.open    { background: rgba(34,197,94,.15);  color: var(--open);   }
+  .pill.closed  { background: rgba(239,68,68,.15);  color: var(--closed); }
+  .pill.warn    { background: rgba(245,158,11,.15); color: var(--warn);   }
+  .pill.blue    { background: rgba(59,130,246,.15); color: var(--blue);   }
 
   .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
   table { width: 100%; border-collapse: collapse; }
-  th { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); font-weight: 500; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); font-weight: 500; text-align: left;
+    padding: 8px 10px; border-bottom: 1px solid var(--border);
+  }
   td { padding: 10px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
   tr:last-child td { border-bottom: none; }
+
+  /* Filas de gates clickeables */
+  tr.gate-row { cursor: pointer; transition: background .15s; }
+  tr.gate-row:hover td { background: rgba(59,130,246,0.06); }
+  tr.gate-row.active td { background: rgba(59,130,246,0.10); }
+
+  .click-hint {
+    font-size: 11px;
+    color: var(--blue);
+    opacity: 0.7;
+    margin-left: 6px;
+  }
 
   .bar-wrap { background: rgba(255,255,255,0.06); border-radius: 4px; height: 6px; overflow: hidden; }
   .bar      { height: 100%; border-radius: 4px; background: var(--blue); transition: width .4s; }
@@ -124,21 +136,115 @@
     padding: 14px;
     text-align: center;
   }
-
   .state-card .val { font-size: 26px; font-weight: 600; }
   .state-card .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .6px; }
-
-  .state-card.create  { border-color: rgba(59,130,246,.3); }
-  .state-card.pending { border-color: rgba(245,158,11,.3); }
-  .state-card.failed  { border-color: rgba(239,68,68,.35); }
+  .state-card.create     { border-color: rgba(59,130,246,.3); }
+  .state-card.pending    { border-color: rgba(245,158,11,.3); }
+  .state-card.failed     { border-color: rgba(239,68,68,.35); }
   .state-card.processing { border-color: rgba(168,85,247,.3); }
-  .state-card.finish  { border-color: rgba(34,197,94,.3); }
+  .state-card.finish     { border-color: rgba(34,197,94,.3); }
+  .state-card.create .val     { color: var(--blue); }
+  .state-card.pending .val    { color: var(--warn); }
+  .state-card.failed .val     { color: var(--closed); }
+  .state-card.processing .val { color: var(--purple); }
+  .state-card.finish .val     { color: var(--open); }
 
-  .state-card.create  .val { color: var(--blue); }
-  .state-card.pending .val { color: var(--warn); }
-  .state-card.failed  .val { color: var(--closed); }
-  .state-card.processing .val { color: #a855f7; }
-  .state-card.finish  .val { color: var(--open); }
+  /* ── PANEL DE EVENTOS ────────────────────────────── */
+  .events-panel {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    margin-top: 12px;
+    overflow: hidden;
+    animation: slideDown .2s ease;
+  }
+
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .events-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: var(--muted);
+  }
+
+  .events-panel-header strong { color: var(--blue); font-size: 13px; }
+
+  .events-panel-close {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    line-height: 1;
+  }
+  .events-panel-close:hover { color: var(--text); }
+
+  .events-list {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .event-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .event-row:last-child { border-bottom: none; }
+  .event-row:hover { background: rgba(255,255,255,0.03); }
+
+  .event-id-cell { font-family: monospace; font-size: 11px; color: var(--muted); }
+  .event-id-cell .root { color: var(--text); }
+  .event-id-cell .path-arrow { color: var(--blue); margin: 0 3px; }
+  .event-id-cell .path-segment { color: var(--warn); }
+
+  .event-op { color: var(--muted); font-size: 11px; font-family: monospace; }
+
+  .event-dur { color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
+
+  .event-state-pill {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 99px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    white-space: nowrap;
+  }
+  .event-state-pill.finish     { background: rgba(34,197,94,.15);  color: var(--open);   }
+  .event-state-pill.failed     { background: rgba(239,68,68,.15);  color: var(--closed); }
+  .event-state-pill.pending    { background: rgba(245,158,11,.15); color: var(--warn);   }
+  .event-state-pill.create     { background: rgba(59,130,246,.15); color: var(--blue);   }
+  .event-state-pill.processing { background: rgba(168,85,247,.15); color: var(--purple); }
+
+  .event-error {
+    grid-column: 1 / -1;
+    color: var(--closed);
+    font-size: 11px;
+    padding: 4px 0 0;
+    font-family: monospace;
+  }
+
+  .events-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
 
   #last-updated { font-size: 12px; color: var(--muted); }
 
@@ -157,6 +263,8 @@
     border-top-color: var(--blue);
     border-radius: 50%;
     animation: spin .7s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
   }
 
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -180,9 +288,13 @@
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
 const URL   = `/auth/control/status?token=${TOKEN}`;
 
+// Gate actualmente expandido
+let _expandedGate = null;
+let _lastData     = null;
+
 async function load() {
   const spin = document.getElementById("spin-icon");
-  spin.innerHTML = '<div class="spinner" style="display:inline-block;vertical-align:middle;"></div>';
+  spin.innerHTML = '<div class="spinner"></div>';
 
   try {
     const res  = await fetch(URL, { headers: { "X-Admin-Token": TOKEN } });
@@ -194,6 +306,7 @@ async function load() {
       return;
     }
 
+    _lastData = data;
     render(data);
     document.getElementById("last-updated").textContent =
       "Actualizado: " + new Date().toLocaleTimeString("es");
@@ -213,8 +326,104 @@ function pill(state) {
   return `<span class="pill blue">${state}</span>`;
 }
 
+// ── Renderiza el camino del event_id ───────────────────────────────────────
+// "20260404143022847_D_M" → "20260404...847 → D → M"
+function renderEventPath(rawId) {
+  const parts = rawId.split("_");
+  const root  = parts[0];
+  const path  = parts.slice(1);
+
+  const rootShort = root.length === 17
+    ? root.slice(0, 8) + "…" + root.slice(-3)
+    : root;
+
+  let html = `<span class="root">${rootShort}</span>`;
+  for (const seg of path) {
+    html += `<span class="path-arrow">→</span><span class="path-segment">${seg}</span>`;
+  }
+  return html;
+}
+
+// ── Panel de eventos de un gate ────────────────────────────────────────────
+function renderEventsPanel(gateName, data) {
+  const events = (data.events_by_gate || {})[gateName] || [];
+
+  let rows = "";
+  if (events.length === 0) {
+    rows = `<div class="events-empty">Sin eventos recientes para ${gateName}</div>`;
+  } else {
+    // Más recientes primero (ya vienen ordenados del servidor)
+    for (const ev of events) {
+      const stateClass = ev.state || "create";
+      const dur = ev.duration_ms != null
+        ? `${Math.round(ev.duration_ms)}ms`
+        : "—";
+
+      let errorRow = "";
+      if (ev.error) {
+        errorRow = `<div class="event-error">⚠ ${ev.error}</div>`;
+      }
+
+      rows += `
+        <div class="event-row">
+          <div class="event-id-cell">${renderEventPath(ev.event_id)}</div>
+          <div class="event-op">${ev.op_id || "—"}</div>
+          <div class="event-dur">${dur}</div>
+          <div><span class="event-state-pill ${stateClass}">${stateClass}</span></div>
+          ${errorRow}
+        </div>`;
+    }
+  }
+
+  return `
+    <div class="events-panel" id="panel-${gateName}">
+      <div class="events-panel-header">
+        <span>Eventos — <strong>${gateName}</strong>
+          <span style="color:var(--muted);font-weight:400;margin-left:6px">${events.length} recientes</span>
+        </span>
+        <button class="events-panel-close" onclick="collapseGate()">&times;</button>
+      </div>
+      <div class="events-list">${rows}</div>
+    </div>`;
+}
+
+function expandGate(gateName) {
+  if (_expandedGate === gateName) {
+    collapseGate();
+    return;
+  }
+  _expandedGate = gateName;
+
+  // Marcar fila activa
+  document.querySelectorAll("tr.gate-row").forEach(r => r.classList.remove("active"));
+  const row = document.getElementById(`gate-row-${gateName}`);
+  if (row) row.classList.add("active");
+
+  // Insertar panel después de la fila
+  removePanel();
+  if (row && _lastData) {
+    const panel = document.createElement("tr");
+    panel.id = "events-panel-row";
+    panel.innerHTML = `<td colspan="7" style="padding:0">${renderEventsPanel(gateName, _lastData)}</td>`;
+    row.insertAdjacentElement("afterend", panel);
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function collapseGate() {
+  _expandedGate = null;
+  document.querySelectorAll("tr.gate-row").forEach(r => r.classList.remove("active"));
+  removePanel();
+}
+
+function removePanel() {
+  const old = document.getElementById("events-panel-row");
+  if (old) old.remove();
+}
+
+// ── Render principal ───────────────────────────────────────────────────────
 function render(d) {
-  const c  = d.conductor || {};
+  const c   = d.conductor || {};
   const reg = c.registry || {};
   const bs  = d.by_state || reg.by_state || {};
   const bg  = reg.by_gate || {};
@@ -264,7 +473,7 @@ function render(d) {
       </div>
     </div>
 
-    <!-- Estados de eventos -->
+    <!-- Estados del registry -->
     <div class="section-title">Estados del registry</div>
     <div class="state-grid">
       <div class="state-card create">
@@ -290,7 +499,11 @@ function render(d) {
     </div>
 
     <!-- Gates -->
-    <div class="section-title">Gates</div>
+    <div class="section-title">Gates
+      <span style="font-size:11px;color:var(--blue);font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0">
+        ↓ Haz click en una fila para ver sus eventos
+      </span>
+    </div>
     <div class="card">
       <table>
         <thead>
@@ -310,13 +523,27 @@ function render(d) {
             const total_ops  = (g.pass_count||0) + (g.fail_count||0);
             const fail_pct   = total_ops > 0 ? Math.round((g.fail_count||0)/total_ops*100) : 0;
             const bar_class  = fail_pct > 10 ? "danger" : fail_pct > 3 ? "warn" : "";
-            return `<tr>
-              <td><strong>${g.name}</strong></td>
+
+            // Latencia y activos — mostrar "—" solo si es null/undefined
+            // Si es 0 mostrar "0ms" / "0" (es un valor válido)
+            const latency = g.avg_latency_ms != null ? g.avg_latency_ms + "ms" : "—";
+            const active  = g.active_ops     != null ? g.active_ops            : "—";
+
+            // Hint de click si hay eventos
+            const hint = gateEvents > 0
+              ? `<span class="click-hint">▾ ver</span>`
+              : "";
+
+            return `<tr
+              class="gate-row"
+              id="gate-row-${g.name}"
+              onclick="expandGate('${g.name}')"
+              title="Click para ver eventos de ${g.name}"
+            >
+              <td><strong>${g.name}</strong>${hint}</td>
               <td>${pill(g.enabled !== undefined ? g.enabled : true)}</td>
               <td>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <span>${gateEvents.toLocaleString()}</span>
-                </div>
+                <span style="${gateEvents > 0 ? 'color:var(--blue);font-weight:600' : ''}">${gateEvents.toLocaleString()}</span>
               </td>
               <td style="color:var(--open)">${(g.pass_count||0).toLocaleString()}</td>
               <td>
@@ -325,8 +552,8 @@ function render(d) {
                   ${fail_pct > 0 ? `<div class="bar-wrap" style="width:60px"><div class="bar ${bar_class}" style="width:${Math.min(fail_pct,100)}%"></div></div>` : ""}
                 </div>
               </td>
-              <td style="color:var(--muted)">${g.avg_latency_ms != null ? g.avg_latency_ms + "ms" : "—"}</td>
-              <td style="color:var(--muted)">${g.active_ops != null ? g.active_ops : "—"}</td>
+              <td style="color:${g.avg_latency_ms != null ? 'var(--text)' : 'var(--muted)'}">${latency}</td>
+              <td style="color:${g.active_ops != null ? 'var(--text)' : 'var(--muted)'}">${active}</td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -353,7 +580,7 @@ function render(d) {
       </table>
     </div>` : ""}
 
-    <!-- Eventos por gate en registry -->
+    <!-- Distribución por gate -->
     ${Object.keys(bg).length > 0 ? `
     <div class="section-title">Distribución por gate (registry)</div>
     <div class="card">
@@ -379,9 +606,20 @@ function render(d) {
   `;
 
   document.getElementById("root").innerHTML = html;
+
+  // Restaurar panel expandido si había uno antes del refresh
+  if (_expandedGate && _lastData) {
+    const row = document.getElementById(`gate-row-${_expandedGate}`);
+    if (row) {
+      row.classList.add("active");
+      const panel = document.createElement("tr");
+      panel.id = "events-panel-row";
+      panel.innerHTML = `<td colspan="7" style="padding:0">${renderEventsPanel(_expandedGate, _lastData)}</td>`;
+      row.insertAdjacentElement("afterend", panel);
+    }
+  }
 }
 
-// Auto-refresh cada 10 segundos
 load();
 setInterval(load, 10000);
 </script>

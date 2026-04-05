@@ -11,23 +11,16 @@
 #     4. OAuth
 #     5. Timer — instanciado e inyectado en Conductor
 #     6. Conductor + wire_auth() — gates concretos registrados aquí
-#     7. Tracer
+#     7. Tracer + wire_http_gate()  ← FIX v3.1: cierra eventos CREATE→FINISH
 #     8. Alembic migrations
 #     9. db.create_all()
 #    10. BootGate.mark_ready()
 #
-# Cambios v3 respecto a la versión anterior:
-#   - BootGate integrado — cada paso usa boot_gate.step()
-#   - Timer instanciado en Fase 2 e inyectado en Conductor
-#   - DbGate inyectado en init_db con un event_id de arranque
-#   - Gates concretos registrados en Conductor vía conductor.register_gate()
-#   - scan_registry() disparado en after_request (fuera de rutas estáticas)
-#   - /health/full protegido en producción
-#
-# Sentry:
-#   - Inicializado antes de create_app()
-#   - _before_send_filter limpia variables sensibles
-#   - capture_exception en todos los bloques críticos
+# FIX v3.1:
+#   Los eventos del EventRegistry se quedaban en estado CREATE para siempre
+#   porque nadie llamaba record_ok() al terminar cada request HTTP.
+#   Solución: tracer.wire_http_gate(http_gate) — el Tracer llama
+#   record_ok() en finish() y record_fail() si status >= 500.
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
@@ -58,13 +51,9 @@ log = logging.getLogger("aureon")
 # ══════════════════════════════════════════════════════════
 
 _SENSITIVE_KEYS = {
-    "SENTRY_DSN",
-    "SECRET_KEY",
-    "DATABASE_URL",
-    "GOOGLE_CLIENT_SECRET",
-    "GITHUB_CLIENT_SECRET",
-    "PAYPAL_SECRET",
-    "SMTP_PASSWORD",
+    "SENTRY_DSN", "SECRET_KEY", "DATABASE_URL",
+    "GOOGLE_CLIENT_SECRET", "GITHUB_CLIENT_SECRET",
+    "PAYPAL_SECRET", "SMTP_PASSWORD",
 }
 
 
@@ -151,16 +140,11 @@ def create_app():
 
     log.info("── Fase 1: Bootstrap ─────────────────────────")
 
-    # ── 1a. BootGate — antes de todo ──────────────────────
-    # Se instancia aquí para que los pasos de Fase 1 puedan usar step().
-    # wire_registry() y mark_ready() ocurren en Fase 2.
+    # ── 1a. BootGate ──────────────────────────────────────
     from shared.control.gates.boot_gate import BootGate
     boot_gate = BootGate()
 
     # ── 1b. Base de datos ─────────────────────────────────
-    # DbGate todavía no existe (se crea en wiring.py en Fase 2).
-    # init_db registrará el resultado cuando reciba db_gate en Fase 2.
-    # Aquí solo inicializamos la conexión sin trazabilidad de control.
     try:
         with boot_gate.step("OP010_001", "db_init"):
             from shared.db import init_db
@@ -208,11 +192,8 @@ def create_app():
     except Exception as e:
         log.error("  [✗] OAuth configuration failed: %s", e)
         _sentry_capture(e, step="oauth")
-        # No raise — OAuth puede fallar sin tumbar el sistema
 
     # ── 2b. Timer ─────────────────────────────────────────
-    # El Timer debe existir antes de wire_auth() para que
-    # el Conductor pueda recibirlo y los Breakers puedan observar colas.
     try:
         with boot_gate.step("OP010_004", "timer"):
             from shared.control.timer import Timer
@@ -223,47 +204,37 @@ def create_app():
     except Exception as e:
         log.error("  [✗] Timer failed: %s", e)
         _sentry_capture(e, step="timer")
-        raise  # Crítico — sin Timer el Conductor no puede cerrar gates
+        raise
 
     # ── 2c. Conductor + wire_auth ─────────────────────────
     try:
         with boot_gate.step("OP010_004", "conductor"):
             from shared.control.conductor import conductor
+            from shared.control.registries.base import GateRegistry
 
-            # Inyectar Timer en Conductor antes de wire_auth
             conductor.wire_timer(timer)
 
             from products.auth.wiring import wire_auth
             wire_auth(app, conductor)
 
-            # Registrar los gates concretos en Conductor
-            # para que _close_gate_direct() pueda encontrarlos
-            from shared.control.registries.base import GateRegistry
             for gate_name in ("HttpGate", "DbGate", "ModuleGate", "BootGate"):
                 if gate_name in GateRegistry:
-                    gate = GateRegistry.get(gate_name)
-                    # register_gate() espera BaseGate — los concretos son compatibles
-                    conductor._gates[gate_name] = gate
+                    conductor._gates[gate_name] = GateRegistry.get(gate_name)
 
-            # Registrar BootGate también (todavía no está en GateRegistry)
             conductor._gates["BootGate"] = boot_gate
-
             conductor.mark_ready()
         log.info("  [✓] Conductor ready")
     except Exception as e:
         log.error("  [✗] Wiring failed: %s", e)
         _sentry_capture(e, step="conductor")
-        raise  # Crítico
+        raise
 
     # ── 2d. wire_registry en BootGate ─────────────────────
-    # Ahora que event_registry existe y está conectado, inyectarlo en BootGate
-    # para que los pasos futuros (si los hay) queden trazados.
     try:
         boot_gate.wire_registry(event_registry)
         log.info("  [✓] BootGate registry wired")
     except Exception as e:
         log.error("  [✗] BootGate wire_registry failed: %s", e)
-        # No crítico — los pasos de arranque ya completaron
 
     # ── 2e. Tracer ────────────────────────────────────────
     try:
@@ -274,15 +245,25 @@ def create_app():
             app.before_request(tracer.begin)
             app.after_request(tracer.finish)
             app.register_error_handler(TraceLoopError, tracer.loop_error_handler)
+
+            # ── FIX v3.1 — inyectar HttpGate en Tracer ────
+            # Sin esto los eventos quedan en CREATE para siempre.
+            # El Tracer llama record_ok() en finish() para cada
+            # request exitosa y record_fail() si status >= 500.
+            if "HttpGate" in GateRegistry:
+                http_gate = GateRegistry.get("HttpGate")
+                tracer.wire_http_gate(http_gate)
+                log.info("  [✓] Tracer ← HttpGate wired (eventos se cerrarán)")
+            else:
+                log.warning("  [!] HttpGate no encontrado — eventos CREATE no se cerrarán")
+
         log.info("  [✓] Tracer wired")
     except Exception as e:
         log.error("  [✗] Tracer wiring failed: %s", e)
         _sentry_capture(e, step="tracer")
-        raise  # Crítico
+        raise
 
     # ── 2f. scan_registry en after_request ────────────────
-    # El Conductor necesita procesar los FAILEDs después de cada request.
-    # Solo en rutas de negocio — excluir static, health, favicon.
     _SKIP_SCAN_PREFIXES = ("/static/", "/health", "/favicon")
 
     @app.after_request
@@ -310,7 +291,6 @@ def create_app():
     except Exception as e:
         log.error("  [✗] Alembic migration failed: %s", e)
         _sentry_capture(e, step="alembic")
-        # No raise — db.create_all actúa como fallback
 
     # ── 2h. Crear / verificar tablas ──────────────────────
     try:
@@ -321,18 +301,15 @@ def create_app():
     except Exception as e:
         log.error("  [✗] db.create_all failed: %s", e)
         _sentry_capture(e, step="db_create_all")
-        raise  # Crítico
+        raise
 
     # ── 2i. BootGate.mark_ready() ─────────────────────────
-    # Solo abre si todos los pasos completaron sin error.
-    # Si algo falló, el gate queda CLOSED y el sistema no está listo.
     boot_gate.mark_ready()
     if boot_gate.is_ready:
         log.info("  [✓] BootGate OPEN — sistema listo")
     else:
         log.error("  [✗] BootGate no pudo abrir — hay pasos fallidos")
 
-    # ── Rutas registradas (solo en desarrollo) ────────────
     if not _is_production:
         with app.app_context():
             for rule in app.url_map.iter_rules():
@@ -382,10 +359,7 @@ def create_app():
 
     @app.route("/health/full")
     def health_full():
-        """
-        Estado interno del sistema de control.
-        Protegido en producción — requiere header interno.
-        """
+        """Estado interno del sistema de control. Protegido en producción."""
         if _is_production:
             internal_token = os.environ.get("HEALTH_TOKEN", "")
             provided_token = request.headers.get("X-Health-Token", "")

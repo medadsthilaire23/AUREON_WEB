@@ -1,30 +1,28 @@
 # shared/control/gates/db_gate.py
 # ══════════════════════════════════════════════════════════════════════════════
-# DB GATE — AUREON Sistema de Control v3.0
+# DB GATE — AUREON Sistema de Control v3.1
 #
-# Envuelve toda operación a la base de datos.
-# Inicializado en shared/db.py → inyectado vía wiring.py en Fase 2.
+# Cambios v3.1:
+#   - scan() acepta parent_event_id (desde g.event_id) y construye
+#     el event_id hijo usando build_child_event_id().
+#   - El evento hijo queda registrado como "20260404143022847_D"
+#     en lugar de un timestamp nuevo desconectado.
+#   - Compatibilidad total hacia atrás: si no se pasa parent_event_id
+#     genera uno nuevo (comportamiento de boot/arranque).
 #
 # Contrato público:
 #   gate.wire_registry(event_registry)
-#   gate.record_ok(op_id)                    ← db.py (boot, sin event_id propio)
-#   gate.record_fail(op_id, error="...")     ← db.py (boot, sin event_id propio)
-#   gate.record_pending(event_id, op_id)     ← uso normal desde rutas
-#   gate.record_ok(event_id, op_id)          ← uso normal desde rutas
-#   gate.record_fail(event_id, op_id, ...)   ← uso normal desde rutas
-#
-# Nota sobre db.py:
-#   db.py llama record_ok("OP009_001") y record_fail("OP009_001", error=...)
-#   sin event_id porque ocurre en el arranque — el DbGate genera uno interno.
+#   gate.record_ok(op_id)                       ← db.py (boot, sin event_id)
+#   gate.record_fail(op_id, error="...")         ← db.py (boot, sin event_id)
+#   gate.record_pending(event_id, op_id)         ← uso normal desde rutas
+#   gate.record_ok(event_id, op_id)              ← uso normal desde rutas
+#   gate.record_fail(event_id, op_id, ...)       ← uso normal desde rutas
 #
 # Uso normal desde rutas (context manager):
-#   with db_gate.scan("OP001_002") as event_id:
+#   from flask import g
+#   with db_gate.scan("OP001_002", parent_event_id=g.event_id) as child_id:
 #       user = User.query.filter_by(email=email).first()
-#
-# Estado:
-#   OPEN   → DB operativa
-#   CLOSED → DB no disponible — nuevas operaciones bloqueadas,
-#            sesiones activas siguen (no tocan DbGate directamente)
+#   # child_id = "20260404143022847_D"
 #
 # Regla arquitectónica:
 #   Este módulo NO importa nada de products/.
@@ -40,7 +38,7 @@ from typing import Any, Generator, Optional, TYPE_CHECKING
 
 from shared.control.gates.base  import GateBase
 from shared.control.gate        import GateResult
-from shared.control.event_id    import generate_event_id
+from shared.control.event_id    import generate_event_id, build_child_event_id
 from shared.control.event_state import EventState
 from shared.control.alert       import Impact, Recovery, Origin
 
@@ -49,8 +47,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("aureon.control.gates.db")
 
-_LATENCY_WARNING_MS  =   500   # warning en log
-_LATENCY_CRITICAL_MS = 2_000   # alerta al Conductor
+_LATENCY_WARNING_MS  =   500
+_LATENCY_CRITICAL_MS = 2_000
 
 
 class DbGateClosedError(Exception):
@@ -85,20 +83,11 @@ class DbGate(GateBase):
         log.info("[DbGate] EventRegistry inyectado")
 
     # ── record_* de boot — llamados desde db.py sin event_id ─────────────────
-    #
-    # db.py llama:
-    #   db_gate.record_ok("OP009_001")
-    #   db_gate.record_fail("OP009_001", error=str(e))
-    #
-    # En el arranque no hay request activa, así que DbGate genera
-    # un event_id interno para poder registrar en EventRegistry.
 
     def record_ok(self, op_id: str, event_id: Optional[str] = None) -> None:
         """
         Registra FINISH para un op_id.
-
-        Acepta llamada sin event_id (db.py en arranque) —
-        en ese caso genera un event_id interno.
+        Sin event_id (boot) → genera uno interno.
         """
         eid = event_id or generate_event_id()
         self._pass_count += 1
@@ -106,7 +95,6 @@ class DbGate(GateBase):
         if self._registry is None:
             return
         try:
-            # En boot el evento no fue creado antes — registrar directo como FINISH
             self._registry.record(
                 event_id = eid,
                 op_id    = op_id,
@@ -125,9 +113,7 @@ class DbGate(GateBase):
     ) -> None:
         """
         Registra FAILED para un op_id.
-        El Conductor lo detectará en el próximo scan_registry().
-
-        Acepta llamada sin event_id (db.py en arranque).
+        Sin event_id (boot) → genera uno interno.
         """
         eid = event_id or generate_event_id()
         self._fail_count += 1
@@ -159,16 +145,30 @@ class DbGate(GateBase):
     # ── Context manager — uso normal desde rutas ──────────────────────────────
 
     @contextmanager
-    def scan(self, op_id: str) -> Generator[str, None, None]:
+    def scan(
+        self,
+        op_id:            str,
+        parent_event_id:  Optional[str] = None,
+    ) -> Generator[str, None, None]:
         """
         Envuelve una operación de DB con trazabilidad completa.
 
-        Uso:
-            with db_gate.scan("OP001_002") as event_id:
-                user = User.query.filter_by(email=email).first()
+        v3.1: acepta parent_event_id para construir el event_id hijo
+        con el camino acumulado.
 
-        Genera event_id, registra CREATE → PENDING en EventRegistry.
-        Al salir registra FINISH (ok) o FAILED.
+        Uso:
+            from flask import g
+
+            # Con trazabilidad de camino (recomendado desde rutas):
+            with db_gate.scan("OP001_002", parent_event_id=g.event_id) as child_id:
+                user = User.query.filter_by(email=email).first()
+            # child_id = "20260404143022847_D"
+
+            # Sin parent (boot / contexto sin request):
+            with db_gate.scan("OP009_001") as event_id:
+                db.create_all()
+
+        Registra CREATE → PENDING al entrar, FINISH al salir o FAILED si hay excepción.
         Lanza DbGateClosedError si el gate está CLOSED.
         """
         with self._lock:
@@ -177,8 +177,13 @@ class DbGate(GateBase):
         if not is_open:
             raise DbGateClosedError()
 
-        event_id = generate_event_id()
-        started  = time.perf_counter()
+        # Construir event_id hijo si hay padre, o generar uno nuevo
+        if parent_event_id is not None:
+            event_id = build_child_event_id(parent_event_id, self.name)
+        else:
+            event_id = generate_event_id()
+
+        started = time.perf_counter()
 
         with self._ops_lock:
             self._active_ops += 1
@@ -196,17 +201,19 @@ class DbGate(GateBase):
             except Exception as e:
                 log.error("[DbGate] scan registry error: %s", e)
 
-        log.debug("[DbGate] BEGIN op=%s event=%s", op_id, event_id)
+        log.debug(
+            "[DbGate] BEGIN op=%s event=%s parent=%s",
+            op_id, event_id, parent_event_id,
+        )
 
         try:
             yield event_id
 
             elapsed_ms = (time.perf_counter() - started) * 1000
-            self._pass_count += 1
+            self._pass_count    += 1
             self._total_latency += elapsed_ms
-            self._op_count += 1
+            self._op_count      += 1
 
-            # Latencia alta → log o alerta
             if elapsed_ms >= _LATENCY_CRITICAL_MS:
                 log.error(
                     "[DbGate] latencia crítica op=%s event=%s %.0fms",
@@ -218,7 +225,10 @@ class DbGate(GateBase):
                     op_id, event_id, elapsed_ms,
                 )
             else:
-                log.debug("[DbGate] OK op=%s event=%s %.0fms", op_id, event_id, elapsed_ms)
+                log.debug(
+                    "[DbGate] OK op=%s event=%s %.0fms",
+                    op_id, event_id, elapsed_ms,
+                )
 
             if self._registry is not None:
                 try:
@@ -231,9 +241,9 @@ class DbGate(GateBase):
 
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - started) * 1000
-            self._fail_count += 1
+            self._fail_count    += 1
             self._total_latency += elapsed_ms
-            self._op_count += 1
+            self._op_count      += 1
 
             log.error(
                 "[DbGate] FAILED op=%s event=%s %.0fms exc=%s",
@@ -254,7 +264,7 @@ class DbGate(GateBase):
             with self._ops_lock:
                 self._active_ops = max(0, self._active_ops - 1)
 
-    # ── Estado — llamado por Breaker/Conductor ────────────────────────────────
+    # ── Estado ────────────────────────────────────────────────────────────────
 
     def set_enabled(self, value: bool) -> None:
         with self._lock:
@@ -273,10 +283,6 @@ class DbGate(GateBase):
             return self._enabled
 
     def count_active_ops(self) -> int:
-        """
-        Número de operaciones de DB activas en este momento.
-        Usado por el Timer para saber si la cola drenó.
-        """
         with self._ops_lock:
             return self._active_ops
 
@@ -286,7 +292,7 @@ class DbGate(GateBase):
             return 0.0
         return self._total_latency / self._op_count
 
-    # ── GateBase.validate (requerido por la clase base) ───────────────────────
+    # ── GateBase.validate ─────────────────────────────────────────────────────
 
     def validate(self, value: Any, **kwargs) -> GateResult:
         with self._lock:

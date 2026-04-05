@@ -1,21 +1,19 @@
 # shared/control/tracer.py
 # ══════════════════════════════════════════════════════════════════════════════
-# Tracer — AUREON Sistema de Control v3.0
+# Tracer — AUREON Sistema de Control v3.1
 #
-# Cambios respecto a versión anterior:
+# Cambios v3.1:
+#   - finish() ahora llama http_gate.record_ok() para transicionar
+#     el evento de CREATE → FINISH en el EventRegistry.
+#     Sin esto los eventos se acumulan en CREATE indefinidamente.
+#   - wire_http_gate() inyecta el HttpGate desde wiring.py (Fase 2).
+#   - Si el status de respuesta >= 500, llama record_fail() en lugar de record_ok().
+#
+# Cambios v3.0 (conservados):
 #   - trace_id unificado con event_id del HttpGate
-#     g._trace.trace_id == g.event_id — un solo ID por request
-#   - Si HttpGate no generó event_id (ruta sin scan), genera uno propio
-#     con el mismo formato (YYYYMMDDHHMMSSMMM) para consistencia
-#   - X-Trace-ID en respuesta expone el event_id — trazabilidad end-to-end
-#   - _new_id eliminado — ya no genera IDs propios en formato req_XXXX
-#   - Parent tracking via X-Trace-ID conservado para flujos OAuth multi-step
-#
-# Formato del ID (heredado de event_id.py):
-#   20260404143022847            — request directa
-#   20260404143022847.cb_4d1e   — callback OAuth (hijo de un event_id padre)
-#
-# Detección de ciclos sin cambios.
+#   - Si HttpGate no generó event_id genera uno propio con generate_event_id()
+#   - X-Trace-ID en respuesta expone el event_id
+#   - Parent tracking via X-Trace-ID para flujos OAuth multi-step
 #
 # Regla arquitectónica:
 #   Este módulo NO importa nada de products/.
@@ -96,6 +94,7 @@ class _ActiveTrace:
     trace_id:   str
     parent_id:  Optional[str]
     started_at: float
+    op_id:      str = "OP001"   # op_id detectado por HttpGate.scan()
     step:       int       = 0
     hops:       list[str] = field(default_factory=list)
     visited:    set[str]  = field(default_factory=set)
@@ -130,18 +129,33 @@ class Tracer:
     con el mismo formato para mantener consistencia en los logs.
 
     Flujo por request:
-        HttpGate.scan()  → g.event_id = "20260404143022847"
-        Tracer.begin()   → g._trace.trace_id = g.event_id  (mismo ID)
+        HttpGate.scan()  → g.event_id = "20260404143022847"  (CREATE en registry)
+        Tracer.begin()   → g._trace.trace_id = g.event_id
         checkpoint("mw") → g._trace.hops = ["mw1"]
-        Tracer.finish()  → X-Trace-ID: 20260404143022847:mw1
+        Tracer.finish()  → http_gate.record_ok() → FINISH en registry
+                         → X-Trace-ID: 20260404143022847:mw1
     """
 
     MAX_HISTORY = 200
 
     def __init__(self, conductor) -> None:
-        self._conductor = conductor
-        self._lock      = threading.Lock()
-        self._history:  list[TraceRecord] = []
+        self._conductor  = conductor
+        self._http_gate  = None   # inyectado en Fase 2 via wire_http_gate()
+        self._lock       = threading.Lock()
+        self._history:   list[TraceRecord] = []
+
+    # ══════════════════════════════════════════════════════
+    # WIRING
+    # ══════════════════════════════════════════════════════
+
+    def wire_http_gate(self, http_gate) -> None:
+        """
+        Inyecta el HttpGate para que finish() pueda llamar
+        record_ok() / record_fail() y cerrar el evento en el registry.
+        Llamado desde wiring.py en Fase 2, después de wire_auth().
+        """
+        self._http_gate = http_gate
+        log.info("[Tracer] HttpGate inyectado — eventos se cerrarán en finish()")
 
     # ══════════════════════════════════════════════════════
     # HOOKS DE FLASK
@@ -152,20 +166,13 @@ class Tracer:
         before_request — inicializa el trace en flask.g.
 
         Reutiliza g.event_id si HttpGate ya lo generó.
-        Si no existe (ruta sin scan, estática, health), genera uno propio
-        con generate_event_id() para mantener el mismo formato.
-
-        X-Trace-ID entrante se usa como parent_id para flujos OAuth
-        multi-request (redirect → callback).
+        Si no existe (ruta estática, health), genera uno propio.
         """
-        # event_id generado por HttpGate.scan() en before_request anterior
         event_id  = getattr(g, "event_id", None) or generate_event_id()
+        op_id     = getattr(g, "op_id",    None) or "OP001"
         parent_id = flask_request.headers.get("X-Trace-ID")
 
-        # En flujos OAuth el parent_id es el event_id de la request original
-        # (el que inició el redirect). Se preserva para correlación.
         if parent_id:
-            # Formato: <parent_event_id>.cb_<sufijo_corto_del_actual>
             trace_id = f"{parent_id}.cb_{event_id[-4:]}"
         else:
             trace_id = event_id
@@ -174,10 +181,9 @@ class Tracer:
             trace_id   = trace_id,
             parent_id  = parent_id,
             started_at = time.perf_counter(),
+            op_id      = op_id,
         )
 
-        # Sincronizar g.event_id con el trace_id final
-        # para que el resto de la cadena use el mismo valor
         g.event_id = trace_id
 
         log.debug(
@@ -187,15 +193,35 @@ class Tracer:
 
     def finish(self, response):
         """
-        after_request — cierra el trace, lo archiva
-        y adjunta X-Trace-ID al header de respuesta.
+        after_request — cierra el trace, transiciona el evento en el registry
+        a FINISH (o FAILED si status >= 500), y adjunta X-Trace-ID.
+
+        FIX v3.1: sin esta llamada los eventos quedan en CREATE para siempre.
         """
         trace: Optional[_ActiveTrace] = getattr(g, "_trace", None)
         if trace is None:
             return response
 
         ended_at = time.perf_counter()
-        record   = TraceRecord(
+        status   = response.status_code
+
+        # ── Cerrar el evento en EventRegistry ────────────────────────────
+        if self._http_gate is not None:
+            event_id = trace.trace_id
+            op_id    = trace.op_id
+            try:
+                if status >= 500:
+                    self._http_gate.record_fail(
+                        event_id, op_id,
+                        error=f"HTTP {status}"
+                    )
+                else:
+                    self._http_gate.record_ok(event_id, op_id)
+            except Exception as e:
+                log.error("[Tracer] finish — error cerrando evento: %s", e)
+
+        # ── Archivar el TraceRecord ───────────────────────────────────────
+        record = TraceRecord(
             trace_id   = trace.trace_id,
             parent_id  = trace.parent_id,
             path       = tuple(trace.hops),
@@ -203,7 +229,7 @@ class Tracer:
             ended_at   = ended_at,
             had_loop   = trace.had_loop,
             http_path  = flask_request.path,
-            status     = response.status_code,
+            status     = status,
         )
 
         with self._lock:
@@ -216,7 +242,7 @@ class Tracer:
         log.debug(
             "[Tracer] finish  trace=%s  path=%s  status=%s  dur=%.1fms  hops=%s",
             trace.trace_id, flask_request.path,
-            response.status_code, record.duration_ms,
+            status, record.duration_ms,
             " → ".join(trace.hops) or "(sin checkpoints)",
         )
 

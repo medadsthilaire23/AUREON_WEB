@@ -1,25 +1,27 @@
 # shared/control/gates/module_gate.py
 # ══════════════════════════════════════════════════════════════════════════════
-# MODULE GATE — AUREON Sistema de Control v3.0
+# MODULE GATE — AUREON Sistema de Control v3.1
 #
-# Envuelve llamadas a servicios externos (Google, GitHub, WebAuthn, Resend).
-# Una sola instancia compartida — no una por servicio.
-# Inicializado en wiring.py e inyectado en oauth.py, passkey.py, email.py
-# vía set_module_gate().
+# Cambios v3.1:
+#   - call() acepta parent_event_id (desde g.event_id) y construye
+#     el event_id hijo usando build_child_event_id().
+#   - El evento hijo queda registrado como "20260404143022847_D_M"
+#     cuando es llamado desde dentro de un DbGate, o "20260404143022847_M"
+#     cuando es llamado directamente desde una ruta HTTP.
+#   - Compatibilidad total hacia atrás: si no se pasa parent_event_id
+#     genera uno nuevo.
 #
-# Contrato público (lo que oauth.py / passkey.py / email.py esperan):
+# Contrato público:
 #   gate.wire_registry(event_registry)
 #   gate.record_pending(event_id, op_id)
 #   gate.record_ok(event_id, op_id)
 #   gate.record_fail(event_id, op_id, error="...")
 #
-# Uso con context manager (opcional, para trazabilidad automática):
-#   with module_gate.call("OP003_002_001") as event_id:
+# Uso con context manager:
+#   from flask import g
+#   with module_gate.call("OP003_002_001", parent_event_id=g.event_id) as child_id:
 #       token = oauth.google.authorize_access_token()
-#
-# Estado:
-#   OPEN   → servicios externos disponibles
-#   CLOSED → servicios externos caídos — operaciones bloqueadas
+#   # child_id = "20260404143022847_M"
 #
 # Regla arquitectónica:
 #   Este módulo NO importa nada de products/.
@@ -35,7 +37,7 @@ from typing import Any, Generator, Optional, TYPE_CHECKING
 
 from shared.control.gates.base  import GateBase
 from shared.control.gate        import GateResult
-from shared.control.event_id    import generate_event_id
+from shared.control.event_id    import generate_event_id, build_child_event_id
 from shared.control.event_state import EventState
 from shared.control.alert       import Impact, Recovery, Origin
 
@@ -44,7 +46,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("aureon.control.gates.module")
 
-_WARN_LATENCY_MS = 5_000   # 5s — warning si supera esto
+_WARN_LATENCY_MS = 5_000
 
 
 class ModuleGateClosedError(Exception):
@@ -59,14 +61,10 @@ class ModuleGateClosedError(Exception):
 class ModuleGate(GateBase):
     """
     Gate para llamadas a servicios externos.
-
     Una instancia compartida por toda la aplicación.
-    Cada módulo externo (oauth, passkey, email) recibe la misma
-    instancia vía set_module_gate() e identifica sus operaciones
-    por op_id.
 
     OPEN   → servicios externos disponibles
-    CLOSED → servicios externos no disponibles, operaciones bloqueadas
+    CLOSED → servicios externos no disponibles
     """
 
     def __init__(self, name: str = "ModuleGate"):
@@ -87,13 +85,6 @@ class ModuleGate(GateBase):
         log.info("[ModuleGate] EventRegistry inyectado")
 
     # ── record_* — contrato v3 ────────────────────────────────────────────────
-    #
-    # oauth.py / passkey.py / email.py usan:
-    #   gate.record_pending(event_id, op_id)
-    #   gate.record_ok(event_id, op_id)
-    #   gate.record_fail(event_id, op_id, error="...")
-    #
-    # El event_id viene de g.event_id (colocado por HttpGate.scan en before_request).
 
     def record_pending(self, event_id: str, op_id: str) -> None:
         """Registra PENDING — llamada en tránsito."""
@@ -119,10 +110,7 @@ class ModuleGate(GateBase):
             log.error("[ModuleGate] record_ok error: %s", e)
 
     def record_fail(self, event_id: str, op_id: str, error: str = "") -> None:
-        """
-        Registra FAILED — llamada fallida.
-        El Conductor lo detectará en el próximo scan_registry().
-        """
+        """Registra FAILED — llamada fallida."""
         if self._registry is None:
             self._fail_count += 1
             log.error("[ModuleGate] FAILED op=%s error=%s (sin registry)", op_id, error)
@@ -132,25 +120,43 @@ class ModuleGate(GateBase):
             self._fail_count += 1
             with self._calls_lock:
                 self._active_calls = max(0, self._active_calls - 1)
-            log.error("[ModuleGate] FAILED event=%s op=%s error=%s", event_id, op_id, error)
+            log.error(
+                "[ModuleGate] FAILED event=%s op=%s error=%s",
+                event_id, op_id, error,
+            )
         except Exception as e:
             log.error("[ModuleGate] record_fail error: %s", e)
 
-    # ── Context manager — uso opcional para trazabilidad automática ───────────
+    # ── Context manager ───────────────────────────────────────────────────────
 
     @contextmanager
-    def call(self, op_id: str, event_id: Optional[str] = None) -> Generator[str, None, None]:
+    def call(
+        self,
+        op_id:           str,
+        parent_event_id: Optional[str] = None,
+    ) -> Generator[str, None, None]:
         """
         Context manager que envuelve una llamada a servicio externo.
 
-        Si ya existe un event_id (desde g.event_id), pasarlo como parámetro.
-        Si no, genera uno nuevo.
+        v3.1: acepta parent_event_id para construir el event_id hijo
+        con el camino acumulado.
 
         Uso:
-            with module_gate.call("OP003_002_001", event_id=g.event_id) as eid:
-                token = oauth.google.authorize_access_token()
+            from flask import g
 
-        Registra PENDING al entrar, FINISH al salir o FAILED si hay excepción.
+            # Con trazabilidad de camino (recomendado desde rutas):
+            with module_gate.call("OP003_002_001", parent_event_id=g.event_id) as child_id:
+                token = oauth.google.authorize_access_token()
+            # child_id = "20260404143022847_M"
+
+            # Anidado dentro de DbGate:
+            # g.event_id ya es "20260404143022847_D"
+            with module_gate.call("OP003_002_001", parent_event_id=g.event_id) as child_id:
+                ...
+            # child_id = "20260404143022847_D_M"
+
+        Registra CREATE → PENDING al entrar.
+        Al salir registra FINISH (ok) o FAILED si hay excepción.
         Lanza ModuleGateClosedError si el gate está CLOSED.
         """
         with self._lock:
@@ -160,14 +166,20 @@ class ModuleGate(GateBase):
             self._fail_count += 1
             raise ModuleGateClosedError(self.name)
 
-        eid     = event_id or generate_event_id()
+        # Construir event_id hijo si hay padre, o generar uno nuevo
+        if parent_event_id is not None:
+            event_id = build_child_event_id(parent_event_id, self.name)
+        else:
+            event_id = generate_event_id()
+
         started = time.perf_counter()
 
-        # Registrar CREATE si no tiene event_id externo
-        if self._registry is not None and event_id is None:
+        # Registrar CREATE si es un evento nuevo (sin padre externo)
+        # o directamente PENDING si el padre ya lo creó
+        if self._registry is not None:
             try:
                 self._registry.record(
-                    event_id = eid,
+                    event_id = event_id,
                     op_id    = op_id,
                     state    = EventState.CREATE,
                     gate     = self.name,
@@ -175,12 +187,15 @@ class ModuleGate(GateBase):
             except Exception as e:
                 log.error("[ModuleGate] call create error: %s", e)
 
-        self.record_pending(eid, op_id)
+        self.record_pending(event_id, op_id)
 
-        log.debug("[ModuleGate] BEGIN op=%s event=%s", op_id, eid)
+        log.debug(
+            "[ModuleGate] BEGIN op=%s event=%s parent=%s",
+            op_id, event_id, parent_event_id,
+        )
 
         try:
-            yield eid
+            yield event_id
 
             elapsed_ms = (time.perf_counter() - started) * 1000
             self._total_latency += elapsed_ms
@@ -189,11 +204,14 @@ class ModuleGate(GateBase):
             if elapsed_ms >= _WARN_LATENCY_MS:
                 log.warning(
                     "[ModuleGate] latencia alta op=%s event=%s %.0fms",
-                    op_id, eid, elapsed_ms,
+                    op_id, event_id, elapsed_ms,
                 )
 
-            self.record_ok(eid, op_id)
-            log.debug("[ModuleGate] OK op=%s event=%s %.0fms", op_id, eid, elapsed_ms)
+            self.record_ok(event_id, op_id)
+            log.debug(
+                "[ModuleGate] OK op=%s event=%s %.0fms",
+                op_id, event_id, elapsed_ms,
+            )
 
         except ModuleGateClosedError:
             raise
@@ -203,14 +221,14 @@ class ModuleGate(GateBase):
             self._total_latency += elapsed_ms
             self._call_count    += 1
 
-            self.record_fail(eid, op_id, error=str(exc))
+            self.record_fail(event_id, op_id, error=str(exc))
             log.error(
                 "[ModuleGate] FAILED op=%s event=%s %.0fms exc=%s",
-                op_id, eid, elapsed_ms, exc,
+                op_id, event_id, elapsed_ms, exc,
             )
             raise
 
-    # ── Estado — llamado por Breaker/Conductor ────────────────────────────────
+    # ── Estado ────────────────────────────────────────────────────────────────
 
     def set_enabled(self, value: bool) -> None:
         with self._lock:
@@ -229,10 +247,6 @@ class ModuleGate(GateBase):
             return self._enabled
 
     def count_active_calls(self) -> int:
-        """
-        Número de llamadas activas en este momento.
-        Usado por el Timer para saber si la cola drenó.
-        """
         with self._calls_lock:
             return self._active_calls
 
@@ -242,7 +256,7 @@ class ModuleGate(GateBase):
             return 0.0
         return self._total_latency / self._call_count
 
-    # ── GateBase.validate (requerido por la clase base) ───────────────────────
+    # ── GateBase.validate ─────────────────────────────────────────────────────
 
     def validate(self, value: Any, **kwargs) -> GateResult:
         with self._lock:
