@@ -1,9 +1,10 @@
 # shared/control/operation_gates.py
 # ══════════════════════════════════════════════════════════════════════════════
-# Mapa estático de operaciones — AUREON Sistema de Control v3.0
+# Mapa estático de operaciones — AUREON Sistema de Control v3.1
 #
-# Define TODAS las operaciones del sistema con sus IDs estáticos,
-# dependencias de gates y jerarquía padre/hijo.
+# Cambios v3.1:
+#   - OP020-OP029 → Lifebound
+#   - OP099       → Dashboard (panel de control interno)
 #
 # Reglas de los IDs:
 #     OP001            ← raíz (0 guiones) — operación completa
@@ -28,8 +29,9 @@
 # Rangos por módulo:
 #     OP001 - OP009   → auth
 #     OP010           → system (boot)
-#     OP020 - OP029   → lifebound (fase siguiente)
+#     OP020 - OP029   → lifebound
 #     OP030+          → productos futuros
+#     OP099           → dashboard (herramientas internas)
 #
 # Regla arquitectónica:
 #     Este módulo NO importa nada de products/.
@@ -435,9 +437,111 @@ OPERATIONS: dict[str, dict] = {
     },
 
     # ══════════════════════════════════════════════════════
-    # LIFEBOUND — OP020 a OP029 (fase siguiente)
+    # LIFEBOUND — OP020 a OP029
     # ══════════════════════════════════════════════════════
-    # Se añaden en la siguiente fase de implementación.
+
+    "OP020": {
+        "name":   "lifebound_session_start",
+        "gates":  ["HttpGate"],
+        "module": "lifebound",
+    },
+    "OP021": {
+        "name":   "lifebound_photos_receive",
+        "gates":  ["HttpGate"],
+        "module": "lifebound",
+    },
+    "OP022": {
+        "name":   "lifebound_pattern_select",
+        "gates":  ["HttpGate"],
+        "module": "lifebound",
+    },
+    "OP023": {
+        "name":   "lifebound_slots_resolve",
+        "gates":  ["HttpGate"],
+        "module": "lifebound",
+    },
+    "OP024": {
+        "name":   "lifebound_transform",
+        "gates":  ["HttpGate"],
+        "module": "lifebound",
+    },
+    "OP025": {
+        "name":   "lifebound_generate",
+        "gates":  ["HttpGate", "ModuleGate"],
+        "module": "lifebound",
+    },
+    "OP025_001": {
+        "name":   "lifebound_generate_intro_pages",
+        "gates":  ["ModuleGate"],
+        "module": "lifebound",
+    },
+    "OP025_002": {
+        "name":   "lifebound_generate_evidence",
+        "gates":  ["ModuleGate"],
+        "module": "lifebound",
+    },
+    "OP025_003": {
+        "name":   "lifebound_generate_pdf_merge",
+        "gates":  ["ModuleGate"],
+        "module": "lifebound",
+    },
+    "OP026": {
+        "name":   "lifebound_session_status",
+        "gates":  ["HttpGate"],
+        "module": "lifebound",
+    },
+    "OP027": {
+        "name":   "lifebound_session_clear",
+        "gates":  ["HttpGate"],
+        "module": "lifebound",
+    },
+    "OP028": {
+        "name":   "lifebound_templates_list",
+        "gates":  ["HttpGate"],
+        "module": "lifebound",
+    },
+    "OP029": {
+        "name":   "lifebound_preview",
+        "gates":  ["HttpGate", "ModuleGate"],
+        "module": "lifebound",
+    },
+
+    # ══════════════════════════════════════════════════════
+    # DASHBOARD — OP099
+    # Panel de control interno — sus eventos aparecen
+    # en un panel separado y NO se suman al sistema.
+    # ══════════════════════════════════════════════════════
+
+    "OP099": {
+        "name":   "dashboard_poll",
+        "gates":  ["HttpGate"],
+        "module": "dashboard",
+    },
+    "OP099_001": {
+        "name":   "dashboard_status",
+        "gates":  ["HttpGate"],
+        "module": "dashboard",
+    },
+    "OP099_002": {
+        "name":   "dashboard_sessions",
+        "gates":  ["HttpGate"],
+        "module": "dashboard",
+    },
+    "OP099_003": {
+        "name":   "dashboard_users",
+        "gates":  ["HttpGate"],
+        "module": "dashboard",
+    },
+    "OP099_004": {
+        "name":   "dashboard_activity",
+        "gates":  ["HttpGate"],
+        "module": "dashboard",
+    },
+    "OP099_005": {
+        "name":   "dashboard_export",
+        "gates":  ["HttpGate"],
+        "module": "dashboard",
+    },
 
 }
 
@@ -466,7 +570,7 @@ def needs_gate(op_id: str, gate_name: str) -> bool:
     Retorna True si la operación necesita ese gate.
 
     Ejemplo:
-        needs_gate("OP001_002", "DbGate") → True
+        needs_gate("OP001_002", "DbGate")   → True
         needs_gate("OP001_002", "HttpGate") → False
     """
     return gate_name in get_gates_for(op_id)

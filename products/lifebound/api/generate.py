@@ -24,11 +24,16 @@ Responsabilidades
 6. Fusionar todo en un único PDF y devolverlo como descarga.
 7. Eliminar la sesión del store al finalizar (liberar memoria).
 
+v3.1 — instrumentado con ModuleGate:
+    OP025_001 → páginas introductorias
+    OP025_002 → páginas de evidencia
+    OP025_003 → merge final del PDF
+
 Payload esperado
 ----------------
 {
-    "plan":               [...],
-    "shared":             {
+    "plan":   [...],
+    "shared": {
         "field_office_name":    "...",
         "field_office_address": "...",
         "attention":            "...",
@@ -41,7 +46,7 @@ Payload esperado
         "interview_time":       "...",
         "applicant_number":     "..."
     },
-    "own":                {
+    "own": {
         "page_1_date":        "...",
         "page_1_description": "...",
         "include_tax_years":  "...",
@@ -78,19 +83,24 @@ _merger = PDFMergerService()
 # ── IDs de las páginas introductorias, en orden fijo ─────────────────────
 _INTRO_PAGES = ("cover_page", "cover_letter", "identification_page")
 
+# ── ModuleGate — inyectado desde wiring.py en Fase 2 ─────────────────────
+_module_gate = None
+
+
+def set_module_gate(gate) -> None:
+    """Llamado desde products/lifebound/wiring.py en Fase 2."""
+    global _module_gate
+    _module_gate = gate
+    logger.info("[Lifebound/generate] ModuleGate inyectado")
+
 
 # ═════════════════════════════════════════════════════════════════════════
 # Helpers privados
 # ═════════════════════════════════════════════════════════════════════════
 
 def _resolve_shared(payload: dict) -> dict:
-    """
-    Extrae los datos compartidos del payload.
-    Acepta tanto el formato nuevo ("shared") como el legado ("applicant_info").
-    """
     if "shared" in payload:
         return payload["shared"]
-
     ai = payload.get("applicant_info", {})
     return {
         "field_office_name":    ai.get("office",         "USCIS Field Office"),
@@ -108,57 +118,41 @@ def _resolve_shared(payload: dict) -> dict:
 
 
 def _resolve_own(payload: dict) -> dict:
-    """
-    Extrae los datos propios del payload.
-    Acepta tanto el formato nuevo ("own") como el legado ("questionnaire_data").
-    """
     return payload.get("own") or payload.get("questionnaire_data", {})
 
 
 def _build_page_data(page: dict, shared: dict, own: dict, photo_map: dict) -> dict:
-    """
-    Construye el diccionario de datos para una página de evidencia.
-    Merge: shared → own → campos de foto del slot.
-    """
     pn        = page["page"]
     page_data = {**shared}
-
     for field in ("date", "location", "description", "title"):
         value = own.get(f"page_{pn}_{field}")
         if value:
             page_data[field] = value
-
     page_data["background_color"] = page.get("color", "white")
-
     for slot in page.get("slots", []):
         pid       = slot.get("photo_id", "")
         slot_num  = slot.get("slot", 1)
         raw_bytes = photo_map.get(pid)
-
         if raw_bytes:
             page_data[f"photo_{slot_num}"] = BytesIO(raw_bytes)
         else:
             logger.warning(
                 "Foto '%s' no encontrada en session store (página %s)", pid, pn
             )
-
     return page_data
 
 
 def _generate_error_page(page_num: int, template_id: str, reason: str) -> bytes:
-    """Genera una página PDF de error visual cuando una página de evidencia falla."""
     error_data = {
         "page_number":  page_num,
         "template_id":  template_id,
         "error_reason": reason,
     }
-
     try:
         return _tm.get_template_instance("error_page").generate(error_data)
     except Exception:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
-
         buf = BytesIO()
         c   = canvas.Canvas(buf, pagesize=letter)
         c.setFont("Helvetica-Bold", 14)
@@ -179,31 +173,14 @@ def _generate_error_page(page_num: int, template_id: str, reason: str) -> bytes:
 @generate_bp.route("/api/generate", methods=["POST"])
 @require_auth
 def generate():
-    """
-    Genera y devuelve el PDF final del álbum de evidencia USCIS.
-
-    Requiere autenticación Aureon via Authorization: Bearer <token>
-
-    Multipart form-data esperado
-    ----------------------------
-    session_id : str
-    payload    : JSON str
-
-    Respuestas HTTP
-    ---------------
-    200 — PDF generado
-    400 — session_id inválido o fotos no recibidas
-    403 — sesión no pertenece al usuario autenticado
-    500 — Error interno
-    """
-    t_start = time.time()
+    t_start  = time.time()
+    event_id = getattr(g, "event_id", None)
 
     # ── 1. Validar sesión ─────────────────────────────────────────────────
     sid = request.form.get("session_id")
     if not sid or not store.exists(sid):
         return jsonify({"error": "Invalid or expired session_id"}), 400
 
-    # Verificar que la sesión pertenece al usuario autenticado
     if not store.belongs_to(sid, g.user_id):
         return jsonify({"error": "Unauthorized"}), 403
 
@@ -229,41 +206,65 @@ def generate():
         return jsonify({"error": "Empty plan. No evidence pages to generate."}), 400
 
     applicant_name = shared.get("applicant_name") or "Unknown"
+    buffers        = []
+    pages_ok       = 0
+    pages_error    = 0
 
-    # ── 3. Páginas introductorias ─────────────────────────────────────────
-    buffers = []
-    try:
+    # ── 3. Páginas introductorias con ModuleGate ──────────────────────────
+    def _gen_intro():
         for doc_id in _INTRO_PAGES:
             buffers.append(_tm.get_template_instance(doc_id).generate(shared))
+
+    try:
+        if _module_gate is not None:
+            with _module_gate.call("OP025_001", parent_event_id=event_id):
+                _gen_intro()
+        else:
+            _gen_intro()
     except Exception as e:
         logger.exception("Error generando páginas introductorias")
         return jsonify({"error": f"Failed to generate intro pages: {e}"}), 500
 
-    # ── 4. Páginas de evidencia ───────────────────────────────────────────
-    pages_ok    = 0
-    pages_error = 0
+    # ── 4. Páginas de evidencia con ModuleGate ────────────────────────────
+    def _gen_evidence():
+        nonlocal pages_ok, pages_error
+        for page in plan:
+            template_id = page.get("template", "unknown")
+            page_num    = page.get("page", 0)
+            try:
+                page_data = _build_page_data(page, shared, own, photo_map)
+                template  = _tm.get_template_instance(template_id)
+                buffers.append(template.generate(page_data))
+                pages_ok += 1
+            except Exception as e:
+                reason = str(e)
+                logger.warning(
+                    "Página %s (%s) falló — insertando error visual. Razón: %s",
+                    page_num, template_id, reason,
+                )
+                buffers.append(_generate_error_page(page_num, template_id, reason))
+                pages_error += 1
 
-    for page in plan:
-        template_id = page.get("template", "unknown")
-        page_num    = page.get("page", 0)
-
-        try:
-            page_data = _build_page_data(page, shared, own, photo_map)
-            template  = _tm.get_template_instance(template_id)
-            buffers.append(template.generate(page_data))
-            pages_ok += 1
-        except Exception as e:
-            reason = str(e)
-            logger.warning(
-                "Página %s (%s) falló — insertando error visual. Razón: %s",
-                page_num, template_id, reason
-            )
-            buffers.append(_generate_error_page(page_num, template_id, reason))
-            pages_error += 1
-
-    # ── 5. Merge final ────────────────────────────────────────────────────
     try:
-        final_pdf = _merger.merge_pages(buffers)
+        if _module_gate is not None:
+            with _module_gate.call("OP025_002", parent_event_id=event_id):
+                _gen_evidence()
+        else:
+            _gen_evidence()
+    except Exception as e:
+        logger.exception("Error generando páginas de evidencia")
+        return jsonify({"error": f"Failed to generate evidence pages: {e}"}), 500
+
+    # ── 5. Merge final con ModuleGate ─────────────────────────────────────
+    def _merge():
+        return _merger.merge_pages(buffers)
+
+    try:
+        if _module_gate is not None:
+            with _module_gate.call("OP025_003", parent_event_id=event_id):
+                final_pdf = _merge()
+        else:
+            final_pdf = _merge()
     except Exception as e:
         logger.exception("Error en merge final del PDF")
         return jsonify({"error": f"PDF merge failed: {e}"}), 500
@@ -274,7 +275,7 @@ def generate():
     elapsed = round(time.time() - t_start, 2)
     logger.info(
         "PDF generado: user=%s solicitante='%s' páginas_ok=%d páginas_error=%d tiempo=%ss",
-        g.user_id, applicant_name, pages_ok, pages_error, elapsed
+        g.user_id, applicant_name, pages_ok, pages_error, elapsed,
     )
 
     filename = f"USCIS_Album_{applicant_name.replace(' ', '_')}.pdf"

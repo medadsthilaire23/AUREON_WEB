@@ -12,6 +12,8 @@
 
 import os
 import logging
+import csv, io
+from flask import Response
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, g, render_template, session, redirect, send_from_directory
@@ -430,6 +432,201 @@ def control_activity():
         log.exception("[control/activity] error")
         return jsonify({"error": str(e)}), 500
 
+@auth_bp.get("/control/export")
+def control_export():
+    """
+    Descarga el registry de eventos en el formato solicitado.
+    Protegido con ADMIN_TOKEN.
+ 
+    Query params:
+        format  = json | csv | txt | pdf   (default: json)
+        module  = all | system | auth | lifebound | dashboard  (default: all)
+        limit   = 1-5000  (default: 500)
+ 
+    Respuesta:
+        Archivo descargable en el formato solicitado.
+    """
+    if not _check_admin_token():
+        return jsonify({"error": "No autorizado"}), 403
+ 
+    import csv, io
+    from flask import Response
+    from shared.control.registries.base import EventRegistry
+    from shared.control.operation_gates import OPERATIONS
+ 
+    fmt    = request.args.get("format", "json").lower()
+    module = request.args.get("module", "all").lower()
+    limit  = min(int(request.args.get("limit", 500)), 5000)
+ 
+    # ── Obtener eventos ────────────────────────────────────────────────────
+    try:
+        events = EventRegistry.recent(limit=limit)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+ 
+    # ── Filtrar por módulo ─────────────────────────────────────────────────
+    if module != "all":
+        filtered = []
+        for ev in events:
+            op      = OPERATIONS.get(ev.get("op_id", ""), {})
+            ev_mod  = op.get("module", "auth")
+            if ev_mod == module:
+                filtered.append(ev)
+        events = filtered
+ 
+    # ── Enriquecer con nombre de operación ─────────────────────────────────
+    enriched = []
+    for ev in events:
+        op   = OPERATIONS.get(ev.get("op_id", ""), {})
+        enriched.append({
+            "event_id":    ev.get("event_id"),
+            "root_id":     ev.get("event_id", "").split("_")[0],
+            "op_id":       ev.get("op_id"),
+            "op_name":     op.get("name", "—"),
+            "module":      op.get("module", "auth"),
+            "state":       ev.get("state"),
+            "gate":        ev.get("gate"),
+            "duration_ms": ev.get("duration_ms"),
+            "error":       ev.get("error"),
+        })
+ 
+    ts = __import__("datetime").datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+ 
+    # ── JSON ──────────────────────────────────────────────────────────────
+    if fmt == "json":
+        import json as _json
+        body = _json.dumps({
+            "exported_at": ts,
+            "total":       len(enriched),
+            "module":      module,
+            "events":      enriched,
+        }, indent=2, ensure_ascii=False)
+        return Response(
+            body,
+            mimetype="application/json",
+            headers={"Content-Disposition": f"attachment; filename=aureon_registry_{ts}.json"},
+        )
+ 
+    # ── CSV ───────────────────────────────────────────────────────────────
+    if fmt == "csv":
+        out = io.StringIO()
+        fields = ["event_id","root_id","op_id","op_name","module","state","gate","duration_ms","error"]
+        writer = csv.DictWriter(out, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(enriched)
+        return Response(
+            out.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=aureon_registry_{ts}.csv"},
+        )
+ 
+    # ── TXT ───────────────────────────────────────────────────────────────
+    if fmt == "txt":
+        lines = [f"AUREON Registry Export — {ts}", f"Total: {len(enriched)} eventos", ""]
+        for ev in enriched:
+            dur  = f"{ev['duration_ms']}ms" if ev["duration_ms"] is not None else "—"
+            err  = f" ERROR: {ev['error']}" if ev["error"] else ""
+            lines.append(
+                f"[{ev['state'].upper():12}] {ev['event_id']:30} "
+                f"{ev['op_id']:20} {ev['op_name']:45} "
+                f"{dur:10}{err}"
+            )
+        return Response(
+            "\n".join(lines),
+            mimetype="text/plain",
+            headers={"Content-Disposition": f"attachment; filename=aureon_registry_{ts}.txt"},
+        )
+ 
+    # ── PDF ───────────────────────────────────────────────────────────────
+    if fmt == "pdf":
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib import colors
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.lib.units import inch
+            import io as _io
+ 
+            buf    = _io.BytesIO()
+            doc    = SimpleDocTemplate(buf, pagesize=letter,
+                                       leftMargin=0.5*inch, rightMargin=0.5*inch,
+                                       topMargin=0.6*inch, bottomMargin=0.6*inch)
+            styles = getSampleStyleSheet()
+            story  = []
+ 
+            # Título
+            story.append(Paragraph(f"<b>AUREON — Registry Export</b>", styles["Title"]))
+            story.append(Paragraph(f"Exportado: {ts} · Total: {len(enriched)} eventos · Módulo: {module}", styles["Normal"]))
+            story.append(Spacer(1, 0.2*inch))
+ 
+            # Tabla
+            headers = ["Event ID", "Op ID", "Operación", "Módulo", "Estado", "Duración", "Error"]
+            rows    = [headers]
+            state_colors = {
+                "finish":     colors.HexColor("#166534"),
+                "failed":     colors.HexColor("#991b1b"),
+                "create":     colors.HexColor("#1e40af"),
+                "pending":    colors.HexColor("#92400e"),
+                "processing": colors.HexColor("#581c87"),
+            }
+ 
+            row_state_map = {}
+            for i, ev in enumerate(enriched, start=1):
+                dur = f"{ev['duration_ms']}ms" if ev["duration_ms"] is not None else "—"
+                rows.append([
+                    ev["event_id"][:20] + "…" if len(ev["event_id"]) > 20 else ev["event_id"],
+                    ev["op_id"] or "—",
+                    ev["op_name"] or "—",
+                    ev["module"] or "—",
+                    (ev["state"] or "").upper(),
+                    dur,
+                    (ev["error"] or "")[:40],
+                ])
+                row_state_map[i] = ev.get("state", "")
+ 
+            col_widths = [1.6*inch, 0.85*inch, 2.2*inch, 0.85*inch, 0.75*inch, 0.7*inch, 1.2*inch]
+            t = Table(rows, colWidths=col_widths, repeatRows=1)
+ 
+            style_cmds = [
+                ("BACKGROUND",   (0,0), (-1,0),  colors.HexColor("#1e293b")),
+                ("TEXTCOLOR",    (0,0), (-1,0),  colors.white),
+                ("FONTNAME",     (0,0), (-1,0),  "Helvetica-Bold"),
+                ("FONTSIZE",     (0,0), (-1,-1), 7),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1), [colors.HexColor("#f8fafc"), colors.white]),
+                ("GRID",         (0,0), (-1,-1), 0.3, colors.HexColor("#e2e8f0")),
+                ("VALIGN",       (0,0), (-1,-1), "MIDDLE"),
+                ("LEFTPADDING",  (0,0), (-1,-1), 4),
+                ("RIGHTPADDING", (0,0), (-1,-1), 4),
+                ("TOPPADDING",   (0,0), (-1,-1), 3),
+                ("BOTTOMPADDING",(0,0), (-1,-1), 3),
+            ]
+ 
+            # Colorear columna Estado por valor
+            for i, state in row_state_map.items():
+                c = state_colors.get(state)
+                if c:
+                    style_cmds.append(("TEXTCOLOR", (4, i), (4, i), c))
+                    style_cmds.append(("FONTNAME",  (4, i), (4, i), "Helvetica-Bold"))
+ 
+            t.setStyle(TableStyle(style_cmds))
+            story.append(t)
+            doc.build(story)
+            buf.seek(0)
+ 
+            return Response(
+                buf.read(),
+                mimetype="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename=aureon_registry_{ts}.pdf"},
+            )
+ 
+        except ImportError:
+            return jsonify({"error": "reportlab no instalado — usa format=json o format=csv"}), 500
+        except Exception as e:
+            log.exception("[control/export] error generando PDF")
+            return jsonify({"error": str(e)}), 500
+ 
+    return jsonify({"error": f"Formato no soportado: {fmt}. Usa: json, csv, txt, pdf"}), 400
+ 
 
 # ══════════════════════════════════════════════════════════
 # REGISTER
