@@ -1,30 +1,29 @@
 # shared/control/conductor.py
 # ══════════════════════════════════════════════════════════════════════════════
-# CONDUCTOR — AUREON Sistema de Control v3.0
+# CONDUCTOR — AUREON v4.0
 #
-# Cambios respecto a v2:
-#   - Lee el EventRegistry para correlacionar IDs — no recibe alertas crudas
-#   - Integra el Timer para cierre seguro de gates
-#   - Mantiene la tabla Impact × Recovery sin cambios
-#   - Mantiene compatibilidad total con conductor.call() y conductor.receive()
-#     para que el código existente no se rompa durante la migración
+# Cambios v4.0 vs v3.0:
 #
-# Flujo v3:
-#   Gate registra FAILED en EventRegistry
-#       ↓
-#   Conductor.scan_registry() detecta la entrada FAILED
-#       ↓
-#   Decide acción (tabla Impact × Recovery)
-#       ↓
-#   Timer.watch(gate_name, on_drain=breaker.close)
-#       ↓
-#   Timer espera cola = 0 → Breaker cierra el gate
-#       ↓
-#   EventRegistry.transition(event_id, op_id, FINISH)
+#   wire_resolver()
+#     Inyecta el GateResolver en Fase 2. El Conductor es el único
+#     que conoce tanto al Resolver como al Tracer — es el orquestador.
 #
-# Compatibilidad v2:
-#   conductor.receive(alert) sigue funcionando — traduce la alerta
-#   a una entrada en EventRegistry y continúa el flujo normal.
+#   operate(op_id) — método central de v4.0
+#     Implementa el ciclo completo: resolver → tatuar gates → transicionar
+#     estados → ejecutar → cerrar. Reemplaza el uso directo de call()
+#     para operaciones registradas en tabla_operacion.json.
+#     Retorna OperateResult — el Conductor nunca lanza excepciones
+#     al código de negocio, solo informa.
+#
+#   scan_registry() ampliado
+#     Ahora procesa FAILED y ANOMALY — ambos requieren atención del
+#     Conductor según needs_conductor() de event_state.py.
+#     Ya no importa operation_gates.py — usa GateResolver como
+#     fuente de verdad única para inferir impacto y recovery.
+#
+#   Compatibilidad v3.x total:
+#     call(), receive(), _decide(), _execute() sin cambios.
+#     El código existente no se rompe durante la migración.
 #
 # Regla arquitectónica:
 #   Este módulo NO importa nada de products/.
@@ -45,11 +44,23 @@ from shared.control.gate        import BaseGate
 from shared.control.breaker     import BaseBreaker
 from shared.control.registry    import BaseRegistry
 from shared.control.event_id    import generate_event_id
-from shared.control.event_state import EventState
+from shared.control.event_state import (
+    EventState,
+    is_anomaly_op,
+    get_alert_level,
+    needs_conductor,
+    safe_transition,
+)
+from shared.control.tracer import checkpoint as tracer_checkpoint
 
 from shared.control.registries.base import BreakerRegistry, GateRegistry, EventRegistry
 from shared.control.breakers.base   import CircuitBreaker, BreakerOpenError, BreakerSnapshot
 from shared.control.gates.base      import Gate, GateClosed, GateSnapshot
+
+# GateResolver importado con TYPE_CHECKING para evitar ciclos en bootstrap
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from shared.control.logic.gate_resolver import GateResolver, ResolveResult
 
 log = logging.getLogger("aureon.control.conductor")
 
@@ -61,16 +72,16 @@ except ImportError:
 
 
 # ══════════════════════════════════════════════════════════
-# DECISION
+# DECISION (sin cambios v3.0)
 # ══════════════════════════════════════════════════════════
 
 class Action(str, Enum):
-    CONTINUE       = "continue"
-    LOG_AND_PASS   = "log_and_pass"
-    BLOCK_REQUEST  = "block_request"
-    TRIP_MODULE    = "trip_module"
-    TRIP_GLOBAL    = "trip_global"
-    SHUTDOWN       = "shutdown"
+    CONTINUE      = "continue"
+    LOG_AND_PASS  = "log_and_pass"
+    BLOCK_REQUEST = "block_request"
+    TRIP_MODULE   = "trip_module"
+    TRIP_GLOBAL   = "trip_global"
+    SHUTDOWN      = "shutdown"
 
 
 @dataclass
@@ -97,6 +108,52 @@ class Decision:
 
 
 # ══════════════════════════════════════════════════════════
+# OPERATE RESULT — v4.0
+# ══════════════════════════════════════════════════════════
+
+@dataclass
+class OperateResult:
+    """
+    Resultado de operate() — el Conductor nunca lanza al código de negocio.
+
+    allowed       — True si todos los gates aprobaron y se puede ejecutar.
+    event_id      — event_id final evolucionado (con aliases tatuados).
+    op_id         — op_id resuelto.
+    op_name       — nombre legible de la operación.
+    gates_stamped — aliases tatuados en orden: ["H", "D", "M"].
+    blocked_by    — gate que bloqueó (solo si not allowed).
+    is_discovery  — True si op_id no estaba en tabla_operacion.json.
+    alert_level   — nivel de alerta si hay anomalía (None si flujo nominal).
+    state         — EventState actual del evento tras operate().
+    reason        — mensaje descriptivo del resultado.
+    """
+    allowed:       bool
+    event_id:      str
+    op_id:         str
+    op_name:       str           = "unknown"
+    gates_stamped: list[str]     = field(default_factory=list)
+    blocked_by:    Optional[str] = None
+    is_discovery:  bool          = False
+    alert_level:   Optional[str] = None
+    state:         EventState    = EventState.CREATE
+    reason:        str           = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "allowed":       self.allowed,
+            "event_id":      self.event_id,
+            "op_id":         self.op_id,
+            "op_name":       self.op_name,
+            "gates_stamped": self.gates_stamped,
+            "blocked_by":    self.blocked_by,
+            "is_discovery":  self.is_discovery,
+            "alert_level":   self.alert_level,
+            "state":         self.state.value,
+            "reason":        self.reason,
+        }
+
+
+# ══════════════════════════════════════════════════════════
 # CONDUCTOR
 # ══════════════════════════════════════════════════════════
 
@@ -110,7 +167,8 @@ class Conductor:
         self._callbacks:  List[Callable[[Alert, Decision], None]] = []
         self._decisions:  List[Decision]          = []
         self._ready       = False
-        self._timer       = None   # inyectado en Fase 2 vía wire_timer()
+        self._timer       = None     # inyectado en Fase 2 vía wire_timer()
+        self._resolver    = None     # inyectado en Fase 2 vía wire_resolver()
         self._lock        = threading.Lock()
 
     # ══════════════════════════════════════════════════════
@@ -124,6 +182,20 @@ class Conductor:
         """
         self._timer = timer
         log.info("[Conductor] Timer inyectado")
+
+    def wire_resolver(self, resolver: "GateResolver") -> None:
+        """
+        Inyecta el GateResolver en Fase 2.
+        Llamar después de wire_timer() y antes de mark_ready().
+
+        El Conductor es el único punto que conoce tanto al Resolver
+        como al Tracer — es el orquestador del ciclo completo v4.0.
+        """
+        self._resolver = resolver
+        log.info(
+            "[Conductor] GateResolver inyectado — %d operaciones disponibles",
+            len(resolver.all_op_ids()),
+        )
 
     def register_gate(self, gate: BaseGate) -> None:
         self._gates[gate.name] = gate
@@ -156,15 +228,239 @@ class Conductor:
     def mark_ready(self) -> None:
         self._ready = True
         log.info(
-            "Conductor listo — Gates: %d | Breakers: %d | Registries: %d | Productos: %d",
+            "Conductor listo — Gates: %d | Breakers: %d | Registries: %d"
+            " | Productos: %d | Resolver: %s",
             len(self._gates),
             len(self._breakers),
             len(self._registries),
             len(self._products),
+            "✓" if self._resolver else "✗ (sin GateResolver)",
         )
 
     # ══════════════════════════════════════════════════════
-    # LLAMADA PROTEGIDA (v2 — sin cambios)
+    # OPERATE — ciclo completo v4.0
+    # ══════════════════════════════════════════════════════
+
+    def operate(self, op_id: str) -> OperateResult:
+        """
+        Ciclo completo de una operación en v4.0.
+
+        Pasos:
+            1. Resolver.resolve(op_id) — validar jerarquía de gates
+            2. Si ALLOWED: tatuar gates con checkpoint() → g.event_id evoluciona
+            3. Transicionar EventState según el resultado
+            4. Si BLOCKED o DISCOVERY: emitir alerta al Conductor
+
+        El código de negocio recibe OperateResult y decide si ejecutar:
+
+            result = conductor.operate("OP001_002")
+            if result.allowed:
+                do_operation()   # g.event_id ya evolucionó
+            else:
+                return error_response(result)
+
+        Fail-open si no hay GateResolver inyectado:
+            Retorna allowed=True para no bloquear el sistema durante bootstrap.
+            El event_id no evoluciona en ese caso.
+        """
+        from flask import g
+
+        event_id = getattr(g, "event_id", generate_event_id())
+
+        # ── Fail-open sin resolver ────────────────────────
+        if self._resolver is None:
+            log.warning(
+                "[Conductor] operate('%s') sin GateResolver — fail-open",
+                op_id,
+            )
+            return OperateResult(
+                allowed  = True,
+                event_id = event_id,
+                op_id    = op_id,
+                state    = EventState.EXECUTING,
+                reason   = "Sin GateResolver — fail-open durante bootstrap",
+            )
+
+        # ── Paso 1: Resolver ──────────────────────────────
+        result = self._resolver.resolve(op_id)
+
+        # ── Paso 2: Tatuar gates o gestionar anomalía ─────
+        from shared.control.logic.gate_resolver import ResolveStatus
+
+        if result.status == ResolveStatus.ALLOWED:
+            return self._operate_allowed(result, event_id)
+
+        elif result.status == ResolveStatus.BLOCKED:
+            return self._operate_blocked(result, event_id)
+
+        elif result.status == ResolveStatus.DISCOVERY:
+            return self._operate_discovery(result, event_id)
+
+        else:
+            # ResolveStatus.ERROR — error interno del resolver
+            return self._operate_error(result, event_id)
+
+    def _operate_allowed(self, result: "ResolveResult", event_id: str) -> OperateResult:
+        """
+        Flujo nominal: todos los gates OPEN.
+        Tatúa gates_ordered en g.event_id vía checkpoint().
+        Transiciona CREATE → VALIDATING.
+        """
+        gates_stamped = []
+
+        for gate_name in result.gates_ordered:
+            try:
+                new_id = tracer_checkpoint(gate_name)
+                gates_stamped.append(gate_name)
+                event_id = new_id
+            except Exception as e:
+                # Loop detectado por el Tracer — tratar como BLOCKED
+                log.error(
+                    "[Conductor] operate: loop en gate '%s': %s",
+                    gate_name, e,
+                )
+                return OperateResult(
+                    allowed    = False,
+                    event_id   = event_id,
+                    op_id      = result.op_id,
+                    op_name    = result.op_name,
+                    gates_stamped = gates_stamped,
+                    blocked_by = gate_name,
+                    state      = EventState.ANOMALY,
+                    alert_level = "ROJA",
+                    reason     = f"Loop de gates detectado en '{gate_name}' (GB)",
+                )
+
+        # Transicionar → VALIDATING (el gate de negocio lo moverá a EXECUTING)
+        EventRegistry.transition(event_id, result.op_id, EventState.VALIDATING)
+
+        log.debug(
+            "[Conductor] ALLOWED op=%s gates=%s event_id=%s",
+            result.op_id, gates_stamped, event_id,
+        )
+
+        return OperateResult(
+            allowed       = True,
+            event_id      = event_id,
+            op_id         = result.op_id,
+            op_name       = result.op_name,
+            gates_stamped = gates_stamped,
+            state         = EventState.VALIDATING,
+            reason        = result.reason,
+        )
+
+    def _operate_blocked(self, result: "ResolveResult", event_id: str) -> OperateResult:
+        """
+        Un gate padre está CLOSED.
+        SecurityGate bloqueado → ANOMALY.
+        Cualquier otro gate → FAILED → PROCESSING.
+        """
+        blocked_by  = result.blocked_by
+        is_security = blocked_by == "SecurityGate"
+        state       = EventState.ANOMALY if is_security else EventState.FAILED
+        alert_level = "ROJA" if is_security else None
+
+        EventRegistry.transition(event_id, result.op_id, state)
+
+        # Emitir alerta al Conductor para que _decide() actúe
+        alert = Alert(
+            code     = f"GATE_BLOCKED_{(blocked_by or 'UNKNOWN').upper()}",
+            message  = result.reason,
+            impact   = self._infer_impact(result),
+            recovery = self._infer_recovery(result),
+            origin   = Origin.INTERNAL,
+            module   = result.modulo,
+            context  = {
+                "op_id":       result.op_id,
+                "blocked_by":  blocked_by,
+                "chain":       result.blocked_chain,
+                "alert_level": alert_level,
+                "prefix":      "GB" if is_security else None,
+            },
+        )
+        self._record_alert(alert)
+        decision = self._decide(alert)
+        self._execute(decision)
+
+        log.info(
+            "[Conductor] BLOCKED op=%s gate=%s security=%s",
+            result.op_id, blocked_by, is_security,
+        )
+
+        return OperateResult(
+            allowed     = False,
+            event_id    = event_id,
+            op_id       = result.op_id,
+            op_name     = result.op_name,
+            blocked_by  = blocked_by,
+            state       = state,
+            alert_level = alert_level,
+            reason      = result.reason,
+        )
+
+    def _operate_discovery(self, result: "ResolveResult", event_id: str) -> OperateResult:
+        """
+        op_id no registrado en tabla_operacion.json → XX Discovery.
+        Transiciona directamente a ANOMALY.
+        Emite alerta ROJA_CRITICA al Management.
+        """
+        EventRegistry.transition(event_id, result.op_id, EventState.ANOMALY)
+
+        alert = Alert(
+            code     = "XX_DISCOVERY",
+            message  = result.reason,
+            impact   = Impact.REQUEST,
+            recovery = Recovery.RUNTIME,
+            origin   = Origin.INTERNAL,
+            module   = "management",
+            context  = {
+                "op_id":       result.op_id,
+                "alert_level": "ROJA_CRITICA",
+                "prefix":      "XX",
+                "action":      "Registrar en tabla_operacion.json via Aduana",
+            },
+        )
+        self._record_alert(alert)
+        # XX siempre pasa por _decide() — el Conductor decide si bloquear o loggear
+        decision = self._decide(alert)
+        self._execute(decision)
+
+        log.warning(
+            "[Conductor] XX DISCOVERY op_id='%s' — registrar en Aduana",
+            result.op_id,
+        )
+
+        return OperateResult(
+            allowed      = False,
+            event_id     = event_id,
+            op_id        = result.op_id,
+            op_name      = "XX_DISCOVERY",
+            is_discovery = True,
+            state        = EventState.ANOMALY,
+            alert_level  = "ROJA_CRITICA",
+            reason       = result.reason,
+        )
+
+    def _operate_error(self, result: "ResolveResult", event_id: str) -> OperateResult:
+        """
+        Error interno del GateResolver — prefijo FA (Fallo Técnico).
+        Fail-open: retorna allowed=True para no bloquear el sistema.
+        """
+        log.error(
+            "[Conductor] ERROR en resolver op='%s': %s",
+            result.op_id, result.reason,
+        )
+        return OperateResult(
+            allowed     = True,     # fail-open — error del resolver no bloquea
+            event_id    = event_id,
+            op_id       = result.op_id,
+            state       = EventState.EXECUTING,
+            alert_level = "NARANJA",
+            reason      = f"FA — Error interno del resolver: {result.reason}",
+        )
+
+    # ══════════════════════════════════════════════════════
+    # LLAMADA PROTEGIDA (v2/v3 — sin cambios)
     # ══════════════════════════════════════════════════════
 
     def call(
@@ -195,125 +491,172 @@ class Conductor:
             return func(*args, **kwargs)
 
     # ══════════════════════════════════════════════════════
-    # v3 — LECTURA DEL REGISTRY
+    # SCAN REGISTRY — v4.0 (ampliado)
     # ══════════════════════════════════════════════════════
 
     def scan_registry(self) -> List[Decision]:
         """
-        Lee el EventRegistry y procesa todas las entradas en FAILED.
-        Llamar periódicamente o desde un hook de after_request.
+        Lee el EventRegistry y procesa entradas que requieren atención.
 
-        Para cada entrada FAILED:
-            1. Transiciona a PROCESSING
-            2. Decide la acción (tabla Impact × Recovery)
-            3. Ejecuta la acción (puede iniciar el Timer)
-            4. Transiciona a FINISH
+        v4.0: procesa FAILED y ANOMALY — ambos activan needs_conductor().
+        v3.0: solo procesaba FAILED.
 
-        Retorna la lista de decisiones tomadas en este scan.
+        Para cada entrada:
+            FAILED  → PROCESSING → (acción) → FINISH
+            ANOMALY → PROCESSING → (acción) → FINISH
         """
-        failed_entries = EventRegistry.get_failed()
-        decisions      = []
+        entries_needing_action = (
+            EventRegistry.get_failed() +
+            EventRegistry.get_anomaly()
+        )
 
-        for entry in failed_entries:
-            # Construir una Alert sintética desde la entrada
+        decisions = []
+
+        for entry in entries_needing_action:
             alert = Alert(
-                code     = f"REGISTRY_FAILED_{entry.op_id.replace('_', '')}",
-                message  = entry.error or f"Operación {entry.op_id} falló",
-                impact   = self._infer_impact(entry),
-                recovery = self._infer_recovery(entry),
+                code     = self._alert_code_for(entry),
+                message  = entry.error or f"Operación {entry.op_id} requiere atención",
+                impact   = self._infer_impact_from_entry(entry),
+                recovery = self._infer_recovery_from_entry(entry),
                 origin   = Origin.INTERNAL,
                 module   = entry.module,
                 context  = {
-                    "event_id":   entry.event_id,
-                    "op_id":      entry.op_id,
-                    "gate":       entry.gate,
+                    "event_id":    entry.event_id,
+                    "op_id":       entry.op_id,
+                    "gate":        entry.gate,
                     "duration_ms": round(entry.duration_ms, 2),
+                    "state":       entry.state,
+                    "alert_level": get_alert_level(entry.op_id),
                 },
             )
 
-            # FAILED → PROCESSING
+            # → PROCESSING
             EventRegistry.transition(
-                entry.event_id, entry.op_id, EventState.PROCESSING
+                entry.event_id, entry.op_id, EventState.PROCESSING,
             )
 
             decision = self._decide(alert)
             self._execute_v3(decision, entry)
             decisions.append(decision)
 
-            # PROCESSING → FINISH
+            # → FINISH
             EventRegistry.transition(
-                entry.event_id, entry.op_id, EventState.FINISH
+                entry.event_id, entry.op_id, EventState.FINISH,
             )
 
             log.info("[Conductor] scan: %s", decision)
 
         return decisions
 
-    def _infer_impact(self, entry) -> Impact:
-        """Infiere el impacto desde el gate y la operación."""
-        from shared.control.operation_gates import OPERATIONS
-        op = OPERATIONS.get(entry.op_id, {})
-        gates = op.get("gates", [])
+    def _alert_code_for(self, entry) -> str:
+        """Construye el código de alerta desde la entrada del registry."""
+        if is_anomaly_op(entry.op_id):
+            prefix = entry.op_id[:2].upper()
+            return f"{prefix}_ANOMALY_{entry.op_id.replace('_', '')}"
+        return f"REGISTRY_FAILED_{entry.op_id.replace('_', '')}"
 
-        if "BootGate" in gates:
+    def _infer_impact_from_entry(self, entry) -> Impact:
+        """
+        Infiere el impacto usando el GateResolver como fuente de verdad.
+        Fallback al método v3 basado en el gate si no hay resolver.
+        """
+        if self._resolver:
+            op = self._resolver.get_op(entry.op_id)
+            if op:
+                gates = op.get("gates", [])
+                if "BootGate" in gates:
+                    return Impact.GLOBAL
+                if len(gates) == 1 and gates[0] in ("DbGate", "ModuleGate"):
+                    return Impact.MODULE
+                return Impact.REQUEST
+
+        # Fallback v3 — inferir desde el gate directamente
+        return self._infer_impact_legacy(entry)
+
+    def _infer_recovery_from_entry(self, entry) -> Recovery:
+        """
+        Infiere la recuperabilidad usando el GateResolver como fuente de verdad.
+        Fallback al método v3 si no hay resolver.
+        """
+        if self._resolver:
+            op = self._resolver.get_op(entry.op_id)
+            if op:
+                gates = op.get("gates", [])
+                if "BootGate" in gates:
+                    return Recovery.FATAL
+                if entry.gate in ("DbGate", "ModuleGate"):
+                    return Recovery.RUNTIME
+                return Recovery.AUTO
+
+        # Fallback v3
+        return self._infer_recovery_legacy(entry)
+
+    def _infer_impact_legacy(self, entry) -> Impact:
+        """Inferencia v3 — solo cuando no hay GateResolver."""
+        if entry.gate == "BootGate":
             return Impact.GLOBAL
-        if "DbGate" in gates and len(gates) == 1:
-            return Impact.MODULE
-        if "ModuleGate" in gates and len(gates) == 1:
+        if entry.gate in ("DbGate", "ModuleGate"):
             return Impact.MODULE
         return Impact.REQUEST
 
-    def _infer_recovery(self, entry) -> Recovery:
-        """Infiere la recuperabilidad desde la operación."""
-        from shared.control.operation_gates import OPERATIONS
-        op = OPERATIONS.get(entry.op_id, {})
-        gates = op.get("gates", [])
-
-        if "BootGate" in gates:
+    def _infer_recovery_legacy(self, entry) -> Recovery:
+        """Inferencia v3 — solo cuando no hay GateResolver."""
+        if entry.gate == "BootGate":
             return Recovery.FATAL
         if entry.gate in ("DbGate", "ModuleGate"):
             return Recovery.RUNTIME
         return Recovery.AUTO
 
+    # ── Métodos v3 legacy (conservados por compatibilidad) ──
+
+    def _infer_impact(self, result: "ResolveResult") -> Impact:
+        """Inferencia desde ResolveResult — para operate()."""
+        gates = result.gates_ordered
+        if "BootGate" in gates:
+            return Impact.GLOBAL
+        if len(gates) == 1 and gates[0] in ("DbGate", "ModuleGate"):
+            return Impact.MODULE
+        return Impact.REQUEST
+
+    def _infer_recovery(self, result: "ResolveResult") -> Recovery:
+        """Recuperabilidad desde ResolveResult — para operate()."""
+        gates = result.gates_ordered
+        if "BootGate" in gates:
+            return Recovery.FATAL
+        if result.blocked_by in ("DbGate", "ModuleGate"):
+            return Recovery.RUNTIME
+        return Recovery.AUTO
+
     def _execute_v3(self, decision: Decision, entry) -> None:
         """
-        Ejecuta la decisión del Conductor usando el Timer.
-        Diferencia clave vs v2: el cierre del gate ocurre vía Timer,
-        no directamente — espera que la cola drene.
+        Ejecuta la decisión usando el Timer.
+        Sin cambios respecto a v3.0.
         """
-        action = decision.action
-        alert  = decision.alert
+        action    = decision.action
+        gate_name = entry.gate
 
         if action in (Action.CONTINUE, Action.LOG_AND_PASS, Action.BLOCK_REQUEST):
             return
-
-        gate_name = entry.gate
 
         if action == Action.TRIP_MODULE:
             self._schedule_close(gate_name, entry.event_id, entry.op_id)
             self._notify_sentry(decision)
 
         elif action == Action.TRIP_GLOBAL:
-            # Cerrar todos los gates vía Timer
-            all_gates = {"HttpGate", "DbGate", "ModuleGate"}
-            for gname in all_gates:
+            for gname in {"HttpGate", "DbGate", "ModuleGate"}:
                 self._schedule_close(gname, entry.event_id, entry.op_id)
             self._notify_sentry(decision)
 
         elif action == Action.SHUTDOWN:
-            self._shutdown(alert)
+            self._shutdown(decision.alert)
             self._notify_sentry(decision)
 
     def _schedule_close(
         self,
-        gate_name:    str,
+        gate_name:     str,
         trigger_event: str,
         trigger_op:    str,
     ) -> None:
-        """
-        Pide al Timer que observe la cola del gate y lo cierre cuando drene.
-        Si no hay Timer inyectado, cierra directamente (fallback v2).
-        """
         if self._timer is None:
             log.warning(
                 "[Conductor] Sin Timer — cerrando gate '%s' directamente",
@@ -336,33 +679,25 @@ class Conductor:
         log.info("[Conductor] Timer observando gate='%s'", gate_name)
 
     def _close_gate_direct(self, gate_name: str) -> None:
-        """Cierra el gate directamente — fallback o forzado."""
-        # Intentar en los gates concretos registrados
         gate = self._gates.get(gate_name)
         if gate and hasattr(gate, "close"):
             gate.close()
             return
-
-        # Intentar en GateRegistry (feature flags)
         if gate_name in GateRegistry:
             GateRegistry.get(gate_name).set_enabled(False)
 
     # ══════════════════════════════════════════════════════
-    # RECEPCIÓN DE ALERTAS (v2 — compatibilidad)
+    # RECEPCIÓN DE ALERTAS (v2 — sin cambios)
     # ══════════════════════════════════════════════════════
 
     def receive(self, alert: Alert) -> Decision:
-        """
-        Compatibilidad v2 — sigue funcionando igual.
-        Adicionalmente registra el evento en EventRegistry.
-        """
+        """Compatibilidad v2 — sin cambios."""
         log.warning("Conductor recibe: %s", alert)
 
-        # Registrar en EventRegistry para trazabilidad
         event_id = generate_event_id()
         EventRegistry.record(
             event_id = event_id,
-            op_id    = "OP000",       # op_id genérico para alertas v2
+            op_id    = "OP000",
             state    = EventState.FAILED,
             gate     = alert.module or "unknown",
             error    = alert.message,
@@ -379,7 +714,6 @@ class Conductor:
             except Exception as e:
                 log.error("Conductor callback error: %s", e)
 
-        # Marcar como FINISH en el Registry
         EventRegistry.transition(event_id, "OP000", EventState.FINISH)
 
         log.info("Conductor decide: %s", decision)
@@ -424,7 +758,7 @@ class Conductor:
         )
 
     # ══════════════════════════════════════════════════════
-    # EJECUCIÓN v2 (compatibilidad)
+    # EJECUCIÓN v2 (compatibilidad — sin cambios)
     # ══════════════════════════════════════════════════════
 
     def _execute(self, decision: Decision) -> None:
@@ -470,7 +804,7 @@ class Conductor:
         self._trip_all(alert)
 
     # ══════════════════════════════════════════════════════
-    # SENTRY
+    # SENTRY (sin cambios)
     # ══════════════════════════════════════════════════════
 
     def _notify_sentry(self, decision: Decision) -> None:
@@ -479,15 +813,14 @@ class Conductor:
         if os.environ.get("FLASK_ENV") != "production":
             return
         try:
-            alert = decision.alert
+            alert     = decision.alert
             level_map = {
                 Action.TRIP_MODULE: "warning",
                 Action.TRIP_GLOBAL: "error",
                 Action.SHUTDOWN:    "fatal",
             }
-            level = level_map.get(decision.action, "warning")
-
-            registry_snap = EventRegistry.snapshot()
+            level            = level_map.get(decision.action, "warning")
+            registry_snap    = EventRegistry.snapshot()
 
             with sentry_sdk.push_scope() as scope:
                 scope.set_tag("aureon.action",   decision.action.value)
@@ -501,9 +834,12 @@ class Conductor:
                     "module":   alert.module,
                     "alert_id": alert.alert_id,
                 })
-                scope.set_context("registry", registry_snap)
+                scope.set_context("registry",  registry_snap)
                 scope.set_context("breakers", {
-                    s["name"]: {"state": s.get("state"), "failures": s.get("failure_count", 0)}
+                    s["name"]: {
+                        "state":    s.get("state"),
+                        "failures": s.get("failure_count", 0),
+                    }
                     for s in BreakerRegistry.all_snapshots()
                 })
                 scope.set_context("products", self._products)
@@ -516,7 +852,7 @@ class Conductor:
             log.error("[Sentry] error al notificar: %s", e)
 
     # ══════════════════════════════════════════════════════
-    # REGISTRO DE ALERTAS
+    # REGISTRO DE ALERTAS (sin cambios)
     # ══════════════════════════════════════════════════════
 
     def _record_alert(self, alert: Alert) -> None:
@@ -534,7 +870,7 @@ class Conductor:
                 log.error("Conductor: error al registrar alerta: %s", e)
 
     # ══════════════════════════════════════════════════════
-    # CONSULTAS DE ESTADO
+    # CONSULTAS DE ESTADO (sin cambios)
     # ══════════════════════════════════════════════════════
 
     def status(self) -> dict:
@@ -543,6 +879,7 @@ class Conductor:
             "products":       self._products,
             "timer_watching": self._timer.watching() if self._timer else [],
             "registry":       EventRegistry.snapshot(),
+            "resolver":       self._resolver.snapshot() if self._resolver else None,
             "breakers": {
                 **{s["name"]: s for s in BreakerRegistry.all_snapshots()},
                 **{n: b.to_dict() for n, b in self._breakers.items()},
@@ -564,6 +901,7 @@ class Conductor:
             "gates":    GateRegistry.all_snapshots(),
             "products": self._products,
             "registry": EventRegistry.snapshot(),
+            "resolver": self._resolver.snapshot() if self._resolver else None,
         }
 
     def get_breaker(self, name: str) -> Optional[CircuitBreaker]:

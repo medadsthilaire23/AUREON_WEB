@@ -1,0 +1,88 @@
+{
+  "_meta": {
+    "version": "4.0",
+    "description": "Mapa de disponibilidad de prefijos de operación AUREON",
+    "estados": {
+      "ACTIVO":    "Prefijo en uso — tiene operaciones registradas",
+      "LIBRE":     "Disponible para nuevas operaciones",
+      "RESERVADO": "Bloqueado para uso futuro o del núcleo",
+      "ANOMALIA":  "Prefijo de diagnóstico — no es una operación de negocio"
+    }
+  },
+
+  "prefijos": {
+    "OP": {
+      "estado": "ACTIVO",
+      "descripcion": "Operation Success — prefijo estándar para operaciones exitosas",
+      "modulos_activos": ["auth", "system", "lifebound", "dashboard"],
+      "rangos": {
+        "001-099": { "modulo": "auth",      "estado": "ACTIVO" },
+        "100-299": { "modulo": "reservado", "estado": "RESERVADO" },
+        "300-399": { "modulo": "context",   "estado": "RESERVADO" },
+        "400-599": { "modulo": "lifebound", "estado": "ACTIVO" },
+        "900-999": { "modulo": "core",      "estado": "RESERVADO" },
+        "099":     { "modulo": "dashboard", "estado": "ACTIVO" }
+      }
+    }
+  },
+
+  "prefijos_anomalia": {
+    "AD": {
+      "estado": "ANOMALIA",
+      "tipo": "Admin",
+      "descripcion": "Acciones no autorizadas o errores de gestión",
+      "log_policy": "AUDIT",
+      "alerta": "ROJA"
+    },
+    "UR": {
+      "estado": "ANOMALIA",
+      "tipo": "Usuario",
+      "descripcion": "Errores de input, falta de permisos o mala praxis del cliente",
+      "log_policy": "ON_ERROR",
+      "alerta": "AMARILLA"
+    },
+    "FL": {
+      "estado": "ANOMALIA",
+      "tipo": "Falso Loc",
+      "descripcion": "IP/GPS manipulado detectado por ContextGate vía X-Forwarded-For",
+      "log_policy": "AUDIT",
+      "alerta": "ROJA"
+    },
+    "GB": {
+      "estado": "ANOMALIA",
+      "tipo": "Gate Bloqueado",
+      "descripcion": "Evento intentó saltarse una puerta obligatoria en la jerarquía",
+      "log_policy": "AUDIT",
+      "alerta": "ROJA"
+    },
+    "FA": {
+      "estado": "ANOMALIA",
+      "tipo": "Fallo Técnico",
+      "descripcion": "Python exception pura — error de código no relacionado con usuario",
+      "log_policy": "ON_ERROR",
+      "alerta": "NARANJA"
+    },
+    "TM": {
+      "estado": "ANOMALIA",
+      "tipo": "Timeout",
+      "descripcion": "Servidor de Render o DB tardó demasiado en responder",
+      "log_policy": "ON_ERROR",
+      "alerta": "NARANJA"
+    },
+    "SA": {
+      "estado": "ANOMALIA",
+      "tipo": "Saturación",
+      "descripcion": "DDoS o demasiadas peticiones por segundo detectadas",
+      "log_policy": "AUDIT",
+      "alerta": "ROJA"
+    },
+    "XX": {
+      "estado": "ANOMALIA",
+      "tipo": "Discovery",
+      "descripcion": "Operación no registrada en tabla_operacion.json — alerta inmediata",
+      "log_policy": "AUDIT",
+      "alerta": "ROJA_CRITICA",
+      "accion": "Disparar alerta en dashboard Management y registrar para aduana"
+    }
+  }
+}

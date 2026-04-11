@@ -1,23 +1,7 @@
-# shared/control/tracer.py
-# ══════════════════════════════════════════════════════════════════════════════
-# Tracer — AUREON Sistema de Control v3.1
-#
-# Cambios v3.1:
-#   - finish() ahora llama http_gate.record_ok() para transicionar
-#     el evento de CREATE → FINISH en el EventRegistry.
-#     Sin esto los eventos se acumulan en CREATE indefinidamente.
-#   - wire_http_gate() inyecta el HttpGate desde wiring.py (Fase 2).
-#   - Si el status de respuesta >= 500, llama record_fail() en lugar de record_ok().
-#
-# Cambios v3.0 (conservados):
-#   - trace_id unificado con event_id del HttpGate
-#   - Si HttpGate no generó event_id genera uno propio con generate_event_id()
-#   - X-Trace-ID en respuesta expone el event_id
-#   - Parent tracking via X-Trace-ID para flujos OAuth multi-step
-#
-# Regla arquitectónica:
-#   Este módulo NO importa nada de products/.
-# ══════════════════════════════════════════════════════════════════════════════
+# shared/control/tracer.py — AUREON v4.0.1
+# Fix: finish() ya NO bloquea la respuesta en anomalías XX de frontend.
+# Solo registra en el EventRegistry y continúa.
+# El 503 solo ocurre si HttpGate.scan() retorna allowed=False.
 
 from __future__ import annotations
 
@@ -29,45 +13,46 @@ from typing import Optional
 
 from flask import g, jsonify, request as flask_request
 
-from shared.control.alert    import Alert, Impact, Recovery, Origin
-from shared.control.event_id import generate_event_id
+from shared.control.alert      import Alert, Impact, Recovery, Origin
+from shared.control.event_id   import (
+    generate_event_id,
+    evolve_id,
+    get_root_id,
+    get_path_aliases,
+    gate_alias,
+)
+from shared.control.event_state import is_anomaly_op, get_alert_level
+from shared.control.operation_gates import XX_OP_ID, _FRONTEND_FALLBACK_OP
 
 log = logging.getLogger("aureon.tracer")
 
 
-# ══════════════════════════════════════════════════════════
-# EXCEPCIÓN PÚBLICA
-# ══════════════════════════════════════════════════════════
-
 class TraceLoopError(RuntimeError):
-    """
-    Lanzada cuando un módulo aparece dos veces en el mismo trace.
-    Capturada por el errorhandler global → respuesta 508.
-    """
-    def __init__(self, trace_id: str, module_key: str, path: list[str]) -> None:
-        self.trace_id   = trace_id
-        self.module_key = module_key
-        self.path       = path
+    def __init__(self, trace_id: str, gate_name: str, path: list[str]) -> None:
+        self.trace_id  = trace_id
+        self.gate_name = gate_name
+        self.path      = path
+        self.prefix    = "GB"
+        self.alert_level = "ROJA"
         super().__init__(
             f"Loop detectado en trace '{trace_id}': "
-            f"módulo '{module_key}' ya visitado. Camino: {' → '.join(path)}"
+            f"gate '{gate_name}' ya visitado. Camino: {' → '.join(path)}"
         )
 
 
-# ══════════════════════════════════════════════════════════
-# TRACE RECORD — snapshot inmutable de un trace completado
-# ══════════════════════════════════════════════════════════
-
 @dataclass(frozen=True)
 class TraceRecord:
-    trace_id:   str
-    parent_id:  Optional[str]
-    path:       tuple[str, ...]
-    started_at: float
-    ended_at:   float
-    had_loop:   bool
-    http_path:  str
-    status:     Optional[int]
+    trace_id:    str
+    parent_root: Optional[str]
+    path:        tuple[str, ...]
+    final_id:    str
+    started_at:  float
+    ended_at:    float
+    had_loop:    bool
+    had_anomaly: bool
+    http_path:   str
+    status:      Optional[int]
+    op_id:       Optional[str]
 
     @property
     def duration_ms(self) -> float:
@@ -76,127 +61,94 @@ class TraceRecord:
     def to_dict(self) -> dict:
         return {
             "trace_id":    self.trace_id,
-            "parent_id":   self.parent_id,
+            "parent_root": self.parent_root,
             "path":        list(self.path),
+            "final_id":    self.final_id,
             "duration_ms": round(self.duration_ms, 2),
             "had_loop":    self.had_loop,
+            "had_anomaly": self.had_anomaly,
             "http_path":   self.http_path,
             "status":      self.status,
+            "op_id":       self.op_id,
         }
 
 
-# ══════════════════════════════════════════════════════════
-# ACTIVE TRACE — estado mutable, vive en flask.g
-# ══════════════════════════════════════════════════════════
-
 @dataclass
 class _ActiveTrace:
-    trace_id:   str
-    parent_id:  Optional[str]
-    started_at: float
-    op_id:      str = "OP001"   # op_id detectado por HttpGate.scan()
-    step:       int       = 0
-    hops:       list[str] = field(default_factory=list)
-    visited:    set[str]  = field(default_factory=set)
-    had_loop:   bool      = False
+    root_id:     str
+    started_at:  float
+    op_id:       Optional[str]       = None
+    hops:        list[str]           = field(default_factory=list)
+    visited:     set[str]            = field(default_factory=set)
+    had_loop:    bool                = False
+    had_anomaly: bool                = False
+    parent_root: Optional[str]       = None
 
-    def next_hop(self, module_key: str) -> str:
-        if module_key in self.visited:
-            raise TraceLoopError(self.trace_id, module_key, list(self.hops))
-        self.step += 1
-        hop = f"{module_key}{self.step}"
-        self.hops.append(hop)
-        self.visited.add(module_key)
-        return hop
+    def stamp(self, gate_name: str, current_event_id: str) -> str:
+        if gate_name in self.visited:
+            raise TraceLoopError(
+                trace_id  = current_event_id,
+                gate_name = gate_name,
+                path      = list(self.hops),
+            )
+        evolved = evolve_id(current_event_id, gate_name)
+        alias   = gate_alias(gate_name)
+        self.hops.append(alias)
+        self.visited.add(gate_name)
+        return evolved
 
     @property
-    def current_id(self) -> str:
-        if not self.hops:
-            return self.trace_id
-        return f"{self.trace_id}:{'-'.join(self.hops)}"
+    def current_path(self) -> list[str]:
+        return self.hops
 
-
-# ══════════════════════════════════════════════════════════
-# TRACER
-# ══════════════════════════════════════════════════════════
 
 class Tracer:
-    """
-    Instancia única creada en Fase 2 (app.py).
-
-    El trace_id es el event_id generado por HttpGate.scan() en before_request.
-    Si HttpGate no lo generó (ruta sin scan, health, static), genera uno propio
-    con el mismo formato para mantener consistencia en los logs.
-
-    Flujo por request:
-        HttpGate.scan()  → g.event_id = "20260404143022847"  (CREATE en registry)
-        Tracer.begin()   → g._trace.trace_id = g.event_id
-        checkpoint("mw") → g._trace.hops = ["mw1"]
-        Tracer.finish()  → http_gate.record_ok() → FINISH en registry
-                         → X-Trace-ID: 20260404143022847:mw1
-    """
-
     MAX_HISTORY = 200
 
     def __init__(self, conductor) -> None:
-        self._conductor  = conductor
-        self._http_gate  = None   # inyectado en Fase 2 via wire_http_gate()
-        self._lock       = threading.Lock()
-        self._history:   list[TraceRecord] = []
-
-    # ══════════════════════════════════════════════════════
-    # WIRING
-    # ══════════════════════════════════════════════════════
+        self._conductor = conductor
+        self._http_gate = None
+        self._lock      = threading.Lock()
+        self._history:  list[TraceRecord] = []
 
     def wire_http_gate(self, http_gate) -> None:
-        """
-        Inyecta el HttpGate para que finish() pueda llamar
-        record_ok() / record_fail() y cerrar el evento en el registry.
-        Llamado desde wiring.py en Fase 2, después de wire_auth().
-        """
         self._http_gate = http_gate
         log.info("[Tracer] HttpGate inyectado — eventos se cerrarán en finish()")
 
-    # ══════════════════════════════════════════════════════
-    # HOOKS DE FLASK
-    # ══════════════════════════════════════════════════════
-
     def begin(self) -> None:
-        """
-        before_request — inicializa el trace en flask.g.
+        raw_event_id  = getattr(g, "event_id", None)
+        op_id         = getattr(g, "op_id",    None)
+        parent_header = flask_request.headers.get("X-Trace-ID")
 
-        Reutiliza g.event_id si HttpGate ya lo generó.
-        Si no existe (ruta estática, health), genera uno propio.
-        """
-        event_id  = getattr(g, "event_id", None) or generate_event_id()
-        op_id     = getattr(g, "op_id",    None) or "OP001"
-        parent_id = flask_request.headers.get("X-Trace-ID")
-
-        if parent_id:
-            trace_id = f"{parent_id}.cb_{event_id[-4:]}"
+        if parent_header:
+            parent_root = get_root_id(parent_header)
+            event_id    = evolve_id(parent_root, "HttpGate")
+        elif raw_event_id:
+            event_id    = raw_event_id
+            parent_root = None
         else:
-            trace_id = event_id
+            event_id    = generate_event_id()
+            parent_root = None
 
         g._trace = _ActiveTrace(
-            trace_id   = trace_id,
-            parent_id  = parent_id,
-            started_at = time.perf_counter(),
-            op_id      = op_id,
+            root_id     = get_root_id(event_id),
+            started_at  = time.perf_counter(),
+            op_id       = op_id,
+            parent_root = parent_root,
         )
-
-        g.event_id = trace_id
-
-        log.debug(
-            "[Tracer] begin  trace=%s  parent=%s  path=%s",
-            trace_id, parent_id, flask_request.path,
-        )
+        g.event_id = event_id
 
     def finish(self, response):
         """
-        after_request — cierra el trace, transiciona el evento en el registry
-        a FINISH (o FAILED si status >= 500), y adjunta X-Trace-ID.
+        after_request — cierra el trace.
 
-        FIX v3.1: sin esta llamada los eventos quedan en CREATE para siempre.
+        v4.0.1 fix:
+          - XX en rutas de frontend (modulo=frontend/system) → record_ok()
+            No son anomalías reales — son páginas sin registro en la tabla.
+          - XX en rutas de API (/auth/, /lifebound/api/) → record_anomaly()
+            Estas SÍ son descubrimientos reales que deben alertar.
+          - La respuesta NUNCA se modifica aquí — el 503 solo viene
+            de HttpGate.scan() cuando allowed=False.
         """
         trace: Optional[_ActiveTrace] = getattr(g, "_trace", None)
         if trace is None:
@@ -204,32 +156,42 @@ class Tracer:
 
         ended_at = time.perf_counter()
         status   = response.status_code
+        final_id = getattr(g, "event_id", trace.root_id)
+        op_id    = trace.op_id
 
-        # ── Cerrar el evento en EventRegistry ────────────────────────────
         if self._http_gate is not None:
-            event_id = trace.trace_id
-            op_id    = trace.op_id
             try:
-                if status >= 500:
-                    self._http_gate.record_fail(
-                        event_id, op_id,
-                        error=f"HTTP {status}"
-                    )
+                # Determinar si es anomalía real o frontend sin registrar
+                is_real_anomaly = (
+                    op_id is not None
+                    and is_anomaly_op(op_id)
+                    and op_id != _FRONTEND_FALLBACK_OP  # OP030 nunca es anomalía
+                )
+
+                if is_real_anomaly:
+                    alert_level = get_alert_level(op_id) or "ROJA"
+                    self._http_gate.record_anomaly(final_id, op_id, alert_level=alert_level)
+                    trace.had_anomaly = True
+                elif status >= 500:
+                    self._http_gate.record_fail(final_id, op_id, error=f"HTTP {status}")
                 else:
-                    self._http_gate.record_ok(event_id, op_id)
+                    self._http_gate.record_ok(final_id, op_id)
+
             except Exception as e:
                 log.error("[Tracer] finish — error cerrando evento: %s", e)
 
-        # ── Archivar el TraceRecord ───────────────────────────────────────
         record = TraceRecord(
-            trace_id   = trace.trace_id,
-            parent_id  = trace.parent_id,
-            path       = tuple(trace.hops),
-            started_at = trace.started_at,
-            ended_at   = ended_at,
-            had_loop   = trace.had_loop,
-            http_path  = flask_request.path,
-            status     = status,
+            trace_id    = trace.root_id,
+            parent_root = trace.parent_root,
+            path        = tuple(trace.hops),
+            final_id    = final_id,
+            started_at  = trace.started_at,
+            ended_at    = ended_at,
+            had_loop    = trace.had_loop,
+            had_anomaly = trace.had_anomaly,
+            http_path   = flask_request.path,
+            status      = status,
+            op_id       = op_id,
         )
 
         with self._lock:
@@ -237,83 +199,70 @@ class Tracer:
             if len(self._history) > self.MAX_HISTORY:
                 self._history.pop(0)
 
-        response.headers["X-Trace-ID"] = trace.current_id
+        response.headers["X-Trace-ID"] = final_id
 
         log.debug(
-            "[Tracer] finish  trace=%s  path=%s  status=%s  dur=%.1fms  hops=%s",
-            trace.trace_id, flask_request.path,
-            status, record.duration_ms,
-            " → ".join(trace.hops) or "(sin checkpoints)",
+            "[Tracer] finish  final_id=%s  path=%s  status=%s  dur=%.1fms",
+            final_id,
+            " → ".join(trace.hops) or "(sin gates)",
+            status,
+            record.duration_ms,
         )
 
         return response
 
     def loop_error_handler(self, exc: TraceLoopError):
-        """Errorhandler global para TraceLoopError → 508."""
-        log.error(
-            "[Tracer] 508  trace=%s  module=%s  path=%s",
-            exc.trace_id, exc.module_key, exc.path,
-        )
+        log.error("[Tracer] 508 GB  trace=%s  gate=%s  path=%s",
+                  exc.trace_id, exc.gate_name, exc.path)
         return jsonify({
-            "error":    "Loop detectado — request cancelada",
-            "trace_id": exc.trace_id,
-            "module":   exc.module_key,
-            "path":     exc.path,
+            "error":       "Loop de gates detectado — request cancelada",
+            "prefix":      exc.prefix,
+            "alert_level": exc.alert_level,
+            "trace_id":    exc.trace_id,
+            "gate":        exc.gate_name,
+            "path":        exc.path,
         }), 508
 
-    # ══════════════════════════════════════════════════════
-    # CHECKPOINT
-    # ══════════════════════════════════════════════════════
-
-    def checkpoint(self, module_key: str) -> str:
-        """
-        Registra que `module_key` está siendo visitado en este trace.
-        Devuelve el hop formateado ("mw1", "rou2", ...).
-
-        Claves estándar:
-            "mw"   auth_middleware
-            "oam"  oauth_middleware
-            "rou"  routes
-            "cbk"  oauth callback
-            "psk"  passkey
-            "db"   capa de base de datos
-            "eml"  email
-        """
+    def checkpoint(self, gate_name: str) -> str:
         trace: Optional[_ActiveTrace] = getattr(g, "_trace", None)
         if trace is None:
-            return f"{module_key}?"
+            log.warning("[Tracer] checkpoint('%s') sin trace activo", gate_name)
+            return gate_name
+
+        current_id = getattr(g, "event_id", trace.root_id)
 
         try:
-            hop = trace.next_hop(module_key)
-            log.debug("[Tracer] checkpoint  hop=%s  trace=%s", hop, trace.trace_id)
-            return hop
+            evolved    = trace.stamp(gate_name, current_id)
+            g.event_id = evolved
+            log.debug("[Tracer] checkpoint  gate=%s  id=%s → %s", gate_name, current_id, evolved)
+            return evolved
 
         except TraceLoopError as exc:
             trace.had_loop = True
-
             alert = Alert(
-                code     = "TRACE_LOOP_DETECTED",
+                code     = "GATE_LOOP_DETECTED",
                 message  = str(exc),
                 impact   = Impact.REQUEST,
                 recovery = Recovery.RUNTIME,
                 origin   = Origin.INTERNAL,
                 module   = "tracer",
                 context  = {
-                    "trace_id":   trace.trace_id,
-                    "module_key": module_key,
-                    "path":       list(trace.hops),
+                    "prefix":      "GB",
+                    "alert_level": "ROJA",
+                    "trace_id":    current_id,
+                    "gate_name":   gate_name,
+                    "path":        list(trace.hops),
                 },
             )
             self._conductor.receive(alert)
             raise
 
-    # ══════════════════════════════════════════════════════
-    # CONSULTAS
-    # ══════════════════════════════════════════════════════
+    def current_event_id(self) -> Optional[str]:
+        return getattr(g, "event_id", None)
 
-    def current_trace_id(self) -> Optional[str]:
+    def current_path(self) -> list[str]:
         trace: Optional[_ActiveTrace] = getattr(g, "_trace", None)
-        return trace.current_id if trace else None
+        return trace.hops if trace else []
 
     def recent(self, limit: int = 50) -> list[dict]:
         with self._lock:
@@ -323,20 +272,23 @@ class Tracer:
         with self._lock:
             return [r.to_dict() for r in self._history if r.had_loop]
 
+    def anomalies_detected(self) -> list[dict]:
+        with self._lock:
+            return [r.to_dict() for r in self._history if r.had_anomaly]
+
     def snapshot(self) -> dict:
         with self._lock:
-            total = len(self._history)
-            loops = sum(1 for r in self._history if r.had_loop)
+            total     = len(self._history)
+            loops     = sum(1 for r in self._history if r.had_loop)
+            anomalies = sum(1 for r in self._history if r.had_anomaly)
         return {
-            "total_traced":   total,
-            "loops_detected": loops,
-            "history_size":   self.MAX_HISTORY,
+            "total_traced":       total,
+            "loops_detected":     loops,
+            "anomalies_detected": anomalies,
+            "history_size":       self.MAX_HISTORY,
+            "http_gate_wired":    self._http_gate is not None,
         }
 
-
-# ══════════════════════════════════════════════════════════
-# SINGLETON Y ATAJO GLOBAL
-# ══════════════════════════════════════════════════════════
 
 _tracer_instance: Optional[Tracer] = None
 
@@ -346,13 +298,8 @@ def register_tracer(tracer: Tracer) -> None:
     _tracer_instance = tracer
 
 
-def checkpoint(module_key: str) -> str:
-    """
-    Atajo global — uso desde cualquier módulo:
-
-        from shared.control.tracer import checkpoint
-        checkpoint("mw")
-    """
+def checkpoint(gate_name: str) -> str:
     if _tracer_instance is None:
-        return f"{module_key}?"
-    return _tracer_instance.checkpoint(module_key)
+        log.warning("[Tracer] checkpoint('%s') — tracer no registrado", gate_name)
+        return gate_name
+    return _tracer_instance.checkpoint(gate_name)

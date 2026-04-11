@@ -1,16 +1,37 @@
-// js/pages/control.js
-// ── Página "Control del Sistema" ──────────────────────────────────────────────
+// shared/static/admin/js/pages/control.js
+// ══════════════════════════════════════════════════════════════════════════════
+// Página Control — AUREON v4.0
+//
+// Cambios v4.0 respecto a v3.x:
+//   - Usa State.* en lugar de variables sueltas (_expandedGate, etc.)
+//   - state-grid: 8 estados en dos filas (nominal + crisis)
+//   - Tarjeta "Crisis activas": anomaly + failed en tiempo real
+//   - Tarjeta "Resolver": ops cargadas desde tabla_operacion.json
+//   - _STATE_SHORT: etiquetas cortas sincronizadas con STATE_LABELS de Python
+// ══════════════════════════════════════════════════════════════════════════════
 
+const _STATE_SHORT = {
+  create:     "CREATE",
+  validating: "VALIDAT.",
+  executing:  "EXECUT.",
+  finish:     "FINISH",
+  failed:     "FAILED",
+  processing: "PROCESS.",
+  anomaly:    "ANOMALY ⚠",
+  pending:    "PENDING",
+};
+
+// ── RENDER: CONTROL ───────────────────────────────────────────────────────────
 function renderControl(d) {
-  const c   = d.conductor || {};
-  const reg = c.registry  || {};
-  const bs  = reg.by_state  || {};
-  const bg  = reg.by_gate   || {};
-  const bm  = reg.by_module || {};
-  const gates    = d.gates    || [];
-  const breakers = d.breakers || [];
+  const c            = d.conductor    || {};
+  const reg          = c.registry     || {};
+  const bs           = reg.by_state   || {};
+  const bg           = reg.by_gate    || {};
+  const bm           = reg.by_module  || {};
+  const gates        = d.gates        || [];
+  const breakers     = d.breakers     || [];
+  const resolverSnap = c.resolver     || null;
 
-  // Los eventos del dashboard no se suman al conteo del sistema
   const dashCount = bm["dashboard"] || 0;
   const sysTotal  = (reg.total || 0) - dashCount;
   const cap       = reg.capacity || 5000;
@@ -22,8 +43,7 @@ function renderControl(d) {
     const tot = (gt.pass_count || 0) + (gt.fail_count || 0);
     const fp  = tot > 0 ? Math.round((gt.fail_count || 0) / tot * 100) : 0;
     const isSel = State.expandedGate === gt.name;
-    return `<tr class="row-click ${isSel ? "row-selected" : ""}"
-      id="gate-row-${gt.name}" onclick="toggleGatePanel('${gt.name}')">
+    return `<tr class="row-click ${isSel ? "row-selected" : ""}" id="gate-row-${gt.name}" onclick="toggleGatePanel('${gt.name}')">
       <td><strong>${gt.name}</strong>${ev > 0 ? `<span style="font-size:10px;color:var(--blue);margin-left:4px">▾</span>` : ""}</td>
       <td>${pillBool(gt.enabled !== false)}</td>
       <td><span style="color:${ev > 0 ? "var(--blue)" : "inherit"};font-weight:${ev > 0 ? 600 : 400}">${ev}</span></td>
@@ -65,23 +85,42 @@ function renderControl(d) {
         <div class="stat">${c.decisions ?? 0}</div>
         <div class="stat-sub">${c.last_decision ? `Última: ${c.last_decision.action}` : "Sin decisiones"}</div>
       </div>
+      <div class="card">
+        <div class="card-title">Crisis activas</div>
+        <div class="stat" style="color:${(reg.crisis || 0) > 0 ? "var(--closed)" : "inherit"}">${reg.crisis || 0}</div>
+        <div class="stat-sub">${(bs.anomaly || 0)} anomaly · ${(bs.failed || 0)} failed</div>
+      </div>
+      ${resolverSnap ? `
+      <div class="card">
+        <div class="card-title">Resolver</div>
+        <div class="stat">${resolverSnap.ops_count ?? "—"}</div>
+        <div class="stat-sub">ops cargadas · v${resolverSnap.version || "?"}</div>
+      </div>` : ""}
     </div>
 
     ${modSummary ? `<div style="margin-bottom:12px">${modSummary}</div>` : ""}
 
     <div class="state-grid">
-      ${["create","pending","failed","processing","finish"].map(s =>
-        `<div class="sc ${s}"><div class="v">${(bs[s] || 0).toLocaleString()}</div><div class="l">${s}</div></div>`
+      ${["create","validating","executing","finish"].map(s =>
+        `<div class="sc ${s}"><div class="v">${(bs[s] || 0).toLocaleString()}</div><div class="l">${_STATE_SHORT[s]}</div></div>`
+      ).join("")}
+    </div>
+    <div class="state-grid" style="margin-top:8px">
+      ${["failed","processing","anomaly","pending"].map(s =>
+        `<div class="sc ${s}"><div class="v">${(bs[s] || 0).toLocaleString()}</div><div class="l">${_STATE_SHORT[s]}</div></div>`
       ).join("")}
     </div>
 
     <div class="sec-title">Gates <span class="sec-hint">↓ click en una fila para ver sus eventos</span></div>
-    <div class="tbl-wrap"><table>
-      <thead><tr>
-        <th>Gate</th><th>Estado</th><th>Eventos</th><th>Pass</th><th>Fail</th><th>Latencia avg</th><th>Activos</th>
-      </tr></thead>
-      <tbody id="gates-tbody">${gatesRows}</tbody>
-    </table></div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Gate</th><th>Estado</th><th>Eventos</th>
+          <th>Pass</th><th>Fail</th><th>Latencia avg</th><th>Activos</th>
+        </tr></thead>
+        <tbody id="gates-tbody">${gatesRows}</tbody>
+      </table>
+    </div>
 
     ${breakers.length > 0 ? `
     <div class="sec-title">Breakers</div>
@@ -102,11 +141,16 @@ function renderControl(d) {
       <thead><tr><th>Gate</th><th>Eventos</th><th>Distribución</th></tr></thead>
       <tbody>${Object.entries(bg).sort((a, b) => b[1] - a[1]).map(([name, count]) => {
         const pct = Math.round(count / (reg.total || 1) * 100);
-        return `<tr><td>${name}</td><td>${count}</td>
-          <td style="width:150px"><div style="display:flex;align-items:center;gap:8px">
-            <div class="bw" style="flex:1"><div class="b" style="width:${pct}%"></div></div>
-            <span style="font-size:11px;color:var(--muted)">${pct}%</span>
-          </div></td></tr>`;
+        return `<tr>
+          <td>${name}</td>
+          <td>${count}</td>
+          <td style="width:150px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="bw" style="flex:1"><div class="b" style="width:${pct}%"></div></div>
+              <span style="font-size:11px;color:var(--muted)">${pct}%</span>
+            </div>
+          </td>
+        </tr>`;
       }).join("")}</tbody>
     </table></div>` : ""}
   `;
@@ -123,7 +167,8 @@ function toggleGatePanel(gateName) {
   removeGatePanel();
   if (row && State.data) {
     const pr = document.createElement("tr");
-    pr.id = "gate-panel-row"; pr.className = "gate-events-row";
+    pr.id = "gate-panel-row";
+    pr.className = "gate-events-row";
     pr.innerHTML = `<td colspan="7">${buildGatePanel(gateName)}</td>`;
     row.insertAdjacentElement("afterend", pr);
     pr.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -148,7 +193,8 @@ function restoreGatePanel() {
   if (!row) return;
   row.classList.add("row-selected");
   const pr = document.createElement("tr");
-  pr.id = "gate-panel-row"; pr.className = "gate-events-row";
+  pr.id = "gate-panel-row";
+  pr.className = "gate-events-row";
   pr.innerHTML = `<td colspan="7">${buildGatePanel(State.expandedGate)}</td>`;
   row.insertAdjacentElement("afterend", pr);
 }
@@ -163,7 +209,10 @@ function buildGatePanel(gateName) {
         const mod   = opModule(ev.op_id);
         return `<div class="ev-row ${isSel ? "ev-selected" : ""}"
           onclick='openDrawer(${JSON.stringify(evObj).replace(/'/g, "\\'")})'>
-          <div style="display:flex;align-items:center;gap:8px">${fmtEvId(ev.event_id)}${modBadge(mod)}</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${fmtEvId(ev.event_id)}${modBadge(mod)}
+            ${isAnomalyOp(ev.op_id) ? anomalyBadge(ev.op_id) : ""}
+          </div>
           <div class="ev-op">${ev.op_id || "—"} · ${opLabel(ev.op_id)}</div>
           <div class="ev-dur">${fmtDur(ev.duration_ms)}</div>
           <div>${pillState(ev.state)}</div>

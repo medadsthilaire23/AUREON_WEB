@@ -1,0 +1,1366 @@
+{
+  "_meta": {
+    "version": "4.0",
+    "description": "Tabla de operaciones AUREON — fuente de verdad inmutable",
+    "rangos": {
+      "001-099": "auth",
+      "100-299": "reservado",
+      "300-399": "context",
+      "400-599": "logic / lifebound",
+      "900-999": "core / sistema",
+      "099": "dashboard",
+      "XX": "discovery — operación no registrada"
+    },
+    "prefijos_anomalia": {
+      "AD": "Admin — acción no autorizada o error de gestión",
+      "UR": "Usuario — error de input o mala praxis del cliente",
+      "FL": "Falso Loc — IP/GPS manipulado detectado por ContextGate",
+      "GB": "Gate Bloqueado — evento intentó saltarse una puerta obligatoria",
+      "FA": "Fallo Técnico — Python exception pura",
+      "TM": "Timeout — servidor o DB tardó demasiado",
+      "SA": "Saturación — DDoS o demasiadas peticiones por segunda",
+      "XX": "Discovery — operación no registrada en el sistema"
+    }
+  },
+  "operaciones": {
+    "OP001": {
+      "nombre": "login",
+      "descripcion": "Login con email y password",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/login"
+        }
+      ]
+    },
+    "OP001_001": {
+      "nombre": "login_http_validate",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP001",
+      "log_policy": "SUMMARY"
+    },
+    "OP001_002": {
+      "nombre": "login_db_user_lookup",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP001",
+      "log_policy": "ON_ERROR"
+    },
+    "OP001_003": {
+      "nombre": "login_db_session_create",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP001",
+      "log_policy": "ON_ERROR"
+    },
+    "OP001_004": {
+      "nombre": "login_email_new_device",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP001",
+      "log_policy": "AUDIT"
+    },
+    "OP002": {
+      "nombre": "register",
+      "descripcion": "Registro de nuevo usuario",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/register"
+        }
+      ]
+    },
+    "OP002_001": {
+      "nombre": "register_http_validate",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP002",
+      "log_policy": "SUMMARY"
+    },
+    "OP002_002": {
+      "nombre": "register_db_user_create",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP002_003": {
+      "nombre": "register_db_identity_create",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP002_004": {
+      "nombre": "register_db_session_create",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP002_005": {
+      "nombre": "register_email_verification",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP002",
+      "log_policy": "AUDIT"
+    },
+    "OP003": {
+      "nombre": "oauth_google",
+      "descripcion": "OAuth con Google",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate",
+        "ModuleGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/oauth/google"
+        },
+        {
+          "method": "GET",
+          "path": "/auth/oauth/google/callback"
+        }
+      ]
+    },
+    "OP003_001": {
+      "nombre": "oauth_google_redirect",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP003",
+      "log_policy": "SUMMARY"
+    },
+    "OP003_002": {
+      "nombre": "oauth_google_token_exchange",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP003",
+      "log_policy": "ON_ERROR"
+    },
+    "OP003_002_001": {
+      "nombre": "oauth_google_token_fetch",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP003_002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP003_002_002": {
+      "nombre": "oauth_google_userinfo",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP003_002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP003_003": {
+      "nombre": "oauth_google_db_user",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP003",
+      "log_policy": "ON_ERROR"
+    },
+    "OP003_003_001": {
+      "nombre": "oauth_google_db_user_lookup",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP003_003",
+      "log_policy": "ON_ERROR"
+    },
+    "OP003_003_002": {
+      "nombre": "oauth_google_db_identity_link",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP003_003",
+      "log_policy": "AUDIT"
+    },
+    "OP003_004": {
+      "nombre": "oauth_google_session_create",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP003",
+      "log_policy": "ON_ERROR"
+    },
+    "OP004": {
+      "nombre": "oauth_github",
+      "descripcion": "OAuth con GitHub",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate",
+        "ModuleGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/oauth/github"
+        },
+        {
+          "method": "GET",
+          "path": "/auth/oauth/github/callback"
+        }
+      ]
+    },
+    "OP004_001": {
+      "nombre": "oauth_github_redirect",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP004",
+      "log_policy": "SUMMARY"
+    },
+    "OP004_002": {
+      "nombre": "oauth_github_token_exchange",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP004",
+      "log_policy": "ON_ERROR"
+    },
+    "OP004_002_001": {
+      "nombre": "oauth_github_token_fetch",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP004_002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP004_002_002": {
+      "nombre": "oauth_github_profile_fetch",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP004_002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP004_002_003": {
+      "nombre": "oauth_github_email_fetch",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP004_002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP004_003": {
+      "nombre": "oauth_github_db_user",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP004",
+      "log_policy": "ON_ERROR"
+    },
+    "OP004_004": {
+      "nombre": "oauth_github_session_create",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP004",
+      "log_policy": "ON_ERROR"
+    },
+    "OP005": {
+      "nombre": "passkey_register",
+      "descripcion": "Registro de passkey",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate",
+        "ModuleGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/passkey/register/begin"
+        },
+        {
+          "method": "POST",
+          "path": "/auth/passkey/register/complete"
+        }
+      ]
+    },
+    "OP005_001": {
+      "nombre": "passkey_register_begin",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": "OP005",
+      "log_policy": "AUDIT"
+    },
+    "OP005_001_001": {
+      "nombre": "passkey_register_user_lookup",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP005_001",
+      "log_policy": "ON_ERROR"
+    },
+    "OP005_001_002": {
+      "nombre": "passkey_register_options",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP005_001",
+      "log_policy": "ON_ERROR"
+    },
+    "OP005_002": {
+      "nombre": "passkey_register_complete",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate",
+        "DbGate",
+        "ModuleGate"
+      ],
+      "padre": "OP005",
+      "log_policy": "AUDIT"
+    },
+    "OP005_002_001": {
+      "nombre": "passkey_register_verify",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP005_002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP005_002_002": {
+      "nombre": "passkey_register_db_save",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP005_002",
+      "log_policy": "AUDIT"
+    },
+    "OP006": {
+      "nombre": "passkey_login",
+      "descripcion": "Login con passkey",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate",
+        "ModuleGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/passkey/login/begin"
+        },
+        {
+          "method": "POST",
+          "path": "/auth/passkey/login/complete"
+        }
+      ]
+    },
+    "OP006_001": {
+      "nombre": "passkey_login_begin",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP006",
+      "log_policy": "AUDIT"
+    },
+    "OP006_002": {
+      "nombre": "passkey_login_complete",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate",
+        "DbGate",
+        "ModuleGate"
+      ],
+      "padre": "OP006",
+      "log_policy": "AUDIT"
+    },
+    "OP006_002_001": {
+      "nombre": "passkey_login_credential_lookup",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP006_002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP006_002_002": {
+      "nombre": "passkey_login_verify",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP006_002",
+      "log_policy": "ON_ERROR"
+    },
+    "OP006_002_003": {
+      "nombre": "passkey_login_session_create",
+      "modulo": "auth",
+      "nivel": 3,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP006_002",
+      "log_policy": "AUDIT"
+    },
+    "OP007": {
+      "nombre": "email_send",
+      "descripcion": "Email transaccional",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT"
+    },
+    "OP007_001": {
+      "nombre": "email_verification",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP007",
+      "log_policy": "AUDIT"
+    },
+    "OP007_002": {
+      "nombre": "email_new_device_alert",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP007",
+      "log_policy": "AUDIT"
+    },
+    "OP007_003": {
+      "nombre": "email_reset_password",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP007",
+      "log_policy": "AUDIT"
+    },
+    "OP007_004": {
+      "nombre": "email_sessions_revoked",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP007",
+      "log_policy": "AUDIT"
+    },
+    "OP008": {
+      "nombre": "session_management",
+      "descripcion": "Gestión de sesiones",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/logout"
+        },
+        {
+          "method": "POST",
+          "path": "/auth/session/refresh"
+        },
+        {
+          "method": "DELETE",
+          "path": "/auth/session"
+        }
+      ]
+    },
+    "OP008_001": {
+      "nombre": "session_logout",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP008",
+      "log_policy": "AUDIT"
+    },
+    "OP008_002": {
+      "nombre": "session_refresh",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": "OP008",
+      "log_policy": "SUMMARY"
+    },
+    "OP008_003": {
+      "nombre": "session_revoke_single",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP008",
+      "log_policy": "AUDIT"
+    },
+    "OP008_004": {
+      "nombre": "session_revoke_all",
+      "modulo": "auth",
+      "nivel": 2,
+      "gates": [
+        "DbGate",
+        "ModuleGate"
+      ],
+      "padre": "OP008",
+      "log_policy": "AUDIT"
+    },
+    "OP009": {
+      "nombre": "db_init",
+      "descripcion": "Inicialización de base de datos",
+      "modulo": "system",
+      "nivel": 1,
+      "gates": [
+        "BootGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT"
+    },
+    "OP009_001": {
+      "nombre": "db_connection",
+      "modulo": "system",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP009",
+      "log_policy": "AUDIT"
+    },
+    "OP009_002": {
+      "nombre": "db_migrations",
+      "modulo": "system",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP009",
+      "log_policy": "AUDIT"
+    },
+    "OP009_003": {
+      "nombre": "db_tables_verify",
+      "modulo": "system",
+      "nivel": 2,
+      "gates": [
+        "DbGate"
+      ],
+      "padre": "OP009",
+      "log_policy": "AUDIT"
+    },
+    "OP010": {
+      "nombre": "system_boot",
+      "descripcion": "Boot del sistema",
+      "modulo": "system",
+      "nivel": 1,
+      "gates": [
+        "BootGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT"
+    },
+    "OP010_001": {
+      "nombre": "boot_phase1_db",
+      "modulo": "system",
+      "nivel": 2,
+      "gates": [
+        "BootGate"
+      ],
+      "padre": "OP010",
+      "log_policy": "AUDIT"
+    },
+    "OP010_002": {
+      "nombre": "boot_phase1_blueprints",
+      "modulo": "system",
+      "nivel": 2,
+      "gates": [
+        "BootGate"
+      ],
+      "padre": "OP010",
+      "log_policy": "AUDIT"
+    },
+    "OP010_003": {
+      "nombre": "boot_phase2_oauth",
+      "modulo": "system",
+      "nivel": 2,
+      "gates": [
+        "BootGate"
+      ],
+      "padre": "OP010",
+      "log_policy": "AUDIT"
+    },
+    "OP010_004": {
+      "nombre": "boot_phase2_conductor",
+      "modulo": "system",
+      "nivel": 2,
+      "gates": [
+        "BootGate"
+      ],
+      "padre": "OP010",
+      "log_policy": "AUDIT"
+    },
+    "OP010_005": {
+      "nombre": "boot_phase2_tracer",
+      "modulo": "system",
+      "nivel": 2,
+      "gates": [
+        "BootGate"
+      ],
+      "padre": "OP010",
+      "log_policy": "AUDIT"
+    },
+    "OP011": {
+      "nombre": "auth_page_login",
+      "descripcion": "Página HTML de login",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/login"
+        }
+      ]
+    },
+    "OP012": {
+      "nombre": "auth_page_register",
+      "descripcion": "Página HTML de registro",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/register"
+        }
+      ]
+    },
+    "OP013": {
+      "nombre": "auth_page_consent",
+      "descripcion": "Página HTML de consentimiento SSO",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/consent-page"
+        }
+      ]
+    },
+    "OP014": {
+      "nombre": "auth_page_devices",
+      "descripcion": "Página HTML de dispositivos",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/devices-page"
+        }
+      ]
+    },
+    "OP015": {
+      "nombre": "auth_oauth_complete",
+      "descripcion": "OAuth complete — entrega tokens al frontend",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/oauth-complete"
+        }
+      ]
+    },
+    "OP016": {
+      "nombre": "auth_me",
+      "descripcion": "Perfil del usuario autenticado",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/me"
+        }
+      ]
+    },
+    "OP017": {
+      "nombre": "auth_verify_email",
+      "descripcion": "Verificación de email via token",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/verify-email"
+        }
+      ]
+    },
+    "OP018": {
+      "nombre": "auth_resend_verification",
+      "descripcion": "Reenviar email de verificación",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "ModuleGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/resend-verification"
+        }
+      ]
+    },
+    "OP019": {
+      "nombre": "auth_password_reset",
+      "descripcion": "Reset de contraseña",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/forgot-password"
+        },
+        {
+          "method": "POST",
+          "path": "/auth/reset-password"
+        }
+      ]
+    },
+    "OP020": {
+      "nombre": "lifebound_session_start",
+      "descripcion": "Lifebound — iniciar sesión de trabajo",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/lifebound/api/session/start"
+        }
+      ]
+    },
+    "OP021": {
+      "nombre": "lifebound_photos_receive",
+      "descripcion": "Lifebound — recibir fotos del cliente",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/lifebound/api/session/photos"
+        }
+      ]
+    },
+    "OP022": {
+      "nombre": "lifebound_pattern_select",
+      "descripcion": "Lifebound — seleccionar patrón de plantillas",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/lifebound/api/pattern"
+        }
+      ]
+    },
+    "OP023": {
+      "nombre": "lifebound_slots_resolve",
+      "descripcion": "Lifebound — resolver slots de plantillas",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/lifebound/api/slots"
+        }
+      ]
+    },
+    "OP024": {
+      "nombre": "lifebound_transform",
+      "descripcion": "Lifebound — transformar fotos (pan/zoom)",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/lifebound/api/transform"
+        }
+      ]
+    },
+    "OP025": {
+      "nombre": "lifebound_generate",
+      "descripcion": "Lifebound — generar PDF completo",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "ModuleGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/lifebound/api/generate"
+        }
+      ]
+    },
+    "OP025_001": {
+      "nombre": "lifebound_generate_intro_pages",
+      "modulo": "lifebound",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP025",
+      "log_policy": "ON_ERROR"
+    },
+    "OP025_002": {
+      "nombre": "lifebound_generate_evidence",
+      "modulo": "lifebound",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP025",
+      "log_policy": "ON_ERROR"
+    },
+    "OP025_003": {
+      "nombre": "lifebound_generate_pdf_merge",
+      "modulo": "lifebound",
+      "nivel": 2,
+      "gates": [
+        "ModuleGate"
+      ],
+      "padre": "OP025",
+      "log_policy": "AUDIT"
+    },
+    "OP026": {
+      "nombre": "lifebound_session_status",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/lifebound/api/session/status"
+        }
+      ]
+    },
+    "OP027": {
+      "nombre": "lifebound_session_clear",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "DELETE",
+          "path": "/lifebound/api/session"
+        }
+      ]
+    },
+    "OP028": {
+      "nombre": "lifebound_templates_list",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/lifebound/api/templates"
+        }
+      ]
+    },
+    "OP029": {
+      "nombre": "lifebound_preview",
+      "modulo": "lifebound",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "ModuleGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/lifebound/api/preview"
+        }
+      ]
+    },
+    "OP030": {
+      "nombre": "frontend_home",
+      "descripcion": "Página principal AUREON",
+      "modulo": "frontend",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/"
+        }
+      ]
+    },
+    "OP031": {
+      "nombre": "frontend_hud",
+      "descripcion": "HUD — panel de lanzamiento",
+      "modulo": "frontend",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/hud"
+        }
+      ]
+    },
+    "OP032": {
+      "nombre": "frontend_lifebound",
+      "descripcion": "Lifebound — app frontend",
+      "modulo": "frontend",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/lifebound"
+        }
+      ]
+    },
+    "OP033": {
+      "nombre": "api_announcements",
+      "descripcion": "API — anuncios del sistema",
+      "modulo": "frontend",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/api/announcements"
+        }
+      ]
+    },
+    "OP034": {
+      "nombre": "auth_sessions_list",
+      "descripcion": "Listar sesiones del usuario",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/sessions"
+        }
+      ]
+    },
+    "OP035": {
+      "nombre": "auth_session_revoke",
+      "descripcion": "Revocar sesión específica",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "DELETE",
+          "path": "/auth/sessions/"
+        }
+      ]
+    },
+    "OP036": {
+      "nombre": "auth_devices_list",
+      "descripcion": "Listar dispositivos del usuario",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/devices"
+        }
+      ]
+    },
+    "OP037": {
+      "nombre": "auth_consent",
+      "descripcion": "Consentimiento SSO — GET",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/consent"
+        }
+      ]
+    },
+    "OP038": {
+      "nombre": "auth_grant_product",
+      "descripcion": "Conceder acceso a producto",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/grant-product"
+        }
+      ]
+    },
+    "OP039": {
+      "nombre": "auth_refresh",
+      "descripcion": "Refresh token de sesión",
+      "modulo": "auth",
+      "nivel": 1,
+      "gates": [
+        "HttpGate",
+        "DbGate"
+      ],
+      "padre": null,
+      "log_policy": "SUMMARY",
+      "rutas": [
+        {
+          "method": "POST",
+          "path": "/auth/refresh"
+        }
+      ]
+    },
+    "OP099": {
+      "nombre": "dashboard_poll",
+      "descripcion": "Dashboard — poll general",
+      "modulo": "dashboard",
+      "nivel": 1,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": null,
+      "log_policy": "AUDIT"
+    },
+    "OP099_001": {
+      "nombre": "dashboard_status",
+      "descripcion": "Dashboard — estado del sistema",
+      "modulo": "dashboard",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP099",
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/control/status"
+        }
+      ]
+    },
+    "OP099_002": {
+      "nombre": "dashboard_sessions",
+      "descripcion": "Dashboard — sesiones activas",
+      "modulo": "dashboard",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP099",
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/control/sessions"
+        }
+      ]
+    },
+    "OP099_003": {
+      "nombre": "dashboard_users",
+      "descripcion": "Dashboard — gestión de usuarios",
+      "modulo": "dashboard",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP099",
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/control/users"
+        }
+      ]
+    },
+    "OP099_004": {
+      "nombre": "dashboard_activity",
+      "descripcion": "Dashboard — actividad global",
+      "modulo": "dashboard",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP099",
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/control/activity"
+        }
+      ]
+    },
+    "OP099_005": {
+      "nombre": "dashboard_export",
+      "descripcion": "Dashboard — exportar registry",
+      "modulo": "dashboard",
+      "nivel": 2,
+      "gates": [
+        "HttpGate"
+      ],
+      "padre": "OP099",
+      "log_policy": "AUDIT",
+      "rutas": [
+        {
+          "method": "GET",
+          "path": "/auth/control/export"
+        },
+        {
+          "method": "POST",
+          "path": "/auth/control/export"
+        }
+      ]
+    }
+  }
+}

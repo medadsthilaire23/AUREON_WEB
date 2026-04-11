@@ -1,4 +1,4 @@
-# app.py — AUREON Principal
+# app.py — AUREON Principal v4.0
 # ══════════════════════════════════════════════════════════════════════════════
 # Director de la escalera de inicialización en dos fases.
 #
@@ -10,17 +10,22 @@
 # FASE 2 — Wiring:
 #     4. OAuth
 #     5. Timer — instanciado e inyectado en Conductor
-#     6. Conductor + wire_auth() — gates concretos registrados aquí
-#     7. Tracer + wire_http_gate()  ← FIX v3.1: cierra eventos CREATE→FINISH
-#     8. Alembic migrations
-#     9. db.create_all()
-#    10. BootGate.mark_ready()
+#     6. Conductor + wire_auth() + wire_lifebound()
+#     7. validate_boot() — validación cruzada JSON ↔ Python  [v4.0]
+#     8. GateResolver.wire()                                 [v4.0]
+#     9. Tracer + wire_http_gate()
+#    10. scan_registry en after_request
+#    11. Alembic migrations
+#    12. db.create_all()
+#    13. BootGate.mark_ready()
 #
-# FIX v3.1:
-#   Los eventos del EventRegistry se quedaban en estado CREATE para siempre
-#   porque nadie llamaba record_ok() al terminar cada request HTTP.
-#   Solución: tracer.wire_http_gate(http_gate) — el Tracer llama
-#   record_ok() en finish() y record_fail() si status >= 500.
+# v4.0:
+#   - validate_boot() verifica que tabla_operacion.json y operation_gates.py
+#     estén sincronizados antes de marcar el sistema como listo.
+#   - GateResolver resuelve la jerarquía de gates recursivamente.
+#     Si no está wired, el sistema funciona en modo v3.x (fail-open).
+#   - wire_lifebound() registra Lifebound en el Conductor.
+#   - g.op_id nunca es "OP001" por defecto — rutas desconocidas → "XX".
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
@@ -206,11 +211,11 @@ def create_app():
         _sentry_capture(e, step="timer")
         raise
 
-    # ── 2c. Conductor + wire_auth ─────────────────────────
+    # ── 2c. Conductor + wire_auth + wire_lifebound ────────
     try:
         with boot_gate.step("OP010_004", "conductor"):
             from shared.control.conductor import conductor
-            from shared.control.registries.base import GateRegistry
+            from shared.control.registries.base import GateRegistry, BreakerRegistry
 
             conductor.wire_timer(timer)
 
@@ -229,6 +234,17 @@ def create_app():
         _sentry_capture(e, step="conductor")
         raise
 
+    # ── 2c-bis. wire_lifebound ────────────────────────────
+    # Separado del bloque anterior — Lifebound no es crítico.
+    # Si falla, auth sigue funcionando.
+    try:
+        from products.lifebound.wiring import wire_lifebound
+        wire_lifebound(app, conductor)
+        log.info("  [✓] Lifebound wired")
+    except Exception as e:
+        log.warning("  [!] Lifebound wiring failed (no crítico): %s", e)
+        _sentry_capture(e, step="lifebound_wiring")
+
     # ── 2d. wire_registry en BootGate ─────────────────────
     try:
         boot_gate.wire_registry(event_registry)
@@ -236,7 +252,45 @@ def create_app():
     except Exception as e:
         log.error("  [✗] BootGate wire_registry failed: %s", e)
 
-    # ── 2e. Tracer ────────────────────────────────────────
+    # ── 2e. validate_boot() — v4.0 ────────────────────────
+    # Validación cruzada: tabla_operacion.json ↔ Python.
+    # Si hay advertencias las loguea pero NO aborta el boot.
+    # En producción el sistema arranca aunque el JSON tenga warnings.
+    try:
+        from shared.control.operation_gates import validate_boot
+        boot_result = validate_boot()
+        if boot_result["ok"]:
+            log.info(
+                "  [✓] OperationGates: %d operaciones validadas",
+                boot_result["total"],
+            )
+        else:
+            log.warning(
+                "  [!] OperationGates: %d advertencias en tabla_operacion.json",
+                len(boot_result["warnings"]),
+            )
+            for w in boot_result["warnings"]:
+                log.warning("      ⚠ %s", w)
+    except Exception as e:
+        log.warning("  [!] validate_boot falló (no crítico): %s", e)
+
+    # ── 2f. GateResolver — v4.0 ───────────────────────────
+    # Orquestador de validación recursiva de jerarquía de gates.
+    # Fail-open: si falla el wiring, el sistema funciona en modo v3.x.
+    try:
+        from shared.control.logic.gate_resolver import gate_resolver
+        gate_resolver.wire(
+            event_registry   = event_registry,
+            gate_registry    = GateRegistry,
+            breaker_registry = BreakerRegistry,
+            conductor_gates  = conductor._gates,
+        )
+        log.info("  [✓] GateResolver wired")
+    except Exception as e:
+        log.warning("  [!] GateResolver wiring falló (fail-open, modo v3.x): %s", e)
+        _sentry_capture(e, step="gate_resolver")
+
+    # ── 2g. Tracer ────────────────────────────────────────
     try:
         with boot_gate.step("OP010_005", "tracer"):
             from shared.control.tracer import Tracer, register_tracer, TraceLoopError
@@ -246,14 +300,11 @@ def create_app():
             app.after_request(tracer.finish)
             app.register_error_handler(TraceLoopError, tracer.loop_error_handler)
 
-            # ── FIX v3.1 — inyectar HttpGate en Tracer ────
-            # Sin esto los eventos quedan en CREATE para siempre.
-            # El Tracer llama record_ok() en finish() para cada
-            # request exitosa y record_fail() si status >= 500.
+            # Inyectar HttpGate en Tracer — cierra eventos CREATE→FINISH/ANOMALY
             if "HttpGate" in GateRegistry:
                 http_gate = GateRegistry.get("HttpGate")
                 tracer.wire_http_gate(http_gate)
-                log.info("  [✓] Tracer ← HttpGate wired (eventos se cerrarán)")
+                log.info("  [✓] Tracer ← HttpGate wired")
             else:
                 log.warning("  [!] HttpGate no encontrado — eventos CREATE no se cerrarán")
 
@@ -263,7 +314,7 @@ def create_app():
         _sentry_capture(e, step="tracer")
         raise
 
-    # ── 2f. scan_registry en after_request ────────────────
+    # ── 2h. scan_registry en after_request ────────────────
     _SKIP_SCAN_PREFIXES = ("/static/", "/health", "/favicon")
 
     @app.after_request
@@ -277,7 +328,7 @@ def create_app():
 
     log.info("  [✓] scan_registry registrado en after_request")
 
-    # ── 2g. Alembic migrations ────────────────────────────
+    # ── 2i. Alembic migrations ────────────────────────────
     try:
         from alembic.config import Config as AlembicConfig
         from alembic import command as alembic_command
@@ -292,7 +343,7 @@ def create_app():
         log.error("  [✗] Alembic migration failed: %s", e)
         _sentry_capture(e, step="alembic")
 
-    # ── 2h. Crear / verificar tablas ──────────────────────
+    # ── 2j. Crear / verificar tablas ──────────────────────
     try:
         with app.app_context():
             from shared.db import db
@@ -303,7 +354,7 @@ def create_app():
         _sentry_capture(e, step="db_create_all")
         raise
 
-    # ── 2i. BootGate.mark_ready() ─────────────────────────
+    # ── 2k. BootGate.mark_ready() ─────────────────────────
     boot_gate.mark_ready()
     if boot_gate.is_ready:
         log.info("  [✓] BootGate OPEN — sistema listo")
@@ -368,10 +419,11 @@ def create_app():
 
         import shared.control.tracer as _tracer_mod
         payload = {
-            "status":    "ok",
-            "boot_gate": boot_gate.snapshot(),
-            "conductor": conductor.all_snapshots(),
-            "timer":     timer.snapshot(),
+            "status":       "ok",
+            "boot_gate":    boot_gate.snapshot(),
+            "conductor":    conductor.all_snapshots(),
+            "timer":        timer.snapshot(),
+            "gate_resolver": gate_resolver.snapshot() if gate_resolver._wired else None,
         }
         if _tracer_mod._tracer_instance is not None:
             payload["tracer"] = _tracer_mod._tracer_instance.snapshot()

@@ -1,8 +1,18 @@
 # products/auth/wiring.py
 # ══════════════════════════════════════════════════════════════════════════════
-# Fase 2 (Wiring) del módulo auth — AUREON v3.0
+# Fase 2 (Wiring) del módulo auth — AUREON v4.0
 #
-# v3 — añadida inyección de DbGate en routes.py
+# Orden de wiring en Fase 2 (app.py):
+#   wire_auth(app, conductor)       ← crea gates + conecta resolver
+#   wire_lifebound(app, conductor)  ← reutiliza gates ya registrados
+#   conductor.mark_ready()          ← sistema listo
+#
+# Nota sobre GateResolver:
+#   wire_auth crea los gates concretos y los registra en GateRegistry.
+#   app.py llama gate_resolver.wire() DESPUÉS de wire_auth, ya que
+#   en ese momento conductor._gates está completo.
+#   wire_auth solo importa gate_resolver para inyectarlo en auth_context
+#   y en configure_auth_middleware — no llama wire() directamente.
 # ══════════════════════════════════════════════════════════════════════════════
 
 from shared.db                      import db
@@ -68,6 +78,10 @@ def wire_auth(app, conductor) -> None:
     from shared.control.gates.db_gate     import DbGate
     from shared.control.gates.module_gate import ModuleGate
 
+    # v4.0 — importar gate_resolver solo para inyectarlo en contexto
+    # wire() se llama desde app.py después de que conductor._gates esté completo
+    from shared.control.logic.gate_resolver import gate_resolver
+
     # ═══════════════════════════════════════════════════════
     # FEATURE GATES
     # ═══════════════════════════════════════════════════════
@@ -128,6 +142,7 @@ def wire_auth(app, conductor) -> None:
     auth_context.conductor                   = conductor
     auth_context.gate_registry               = GateRegistry
     auth_context.breaker_registry            = BreakerRegistry
+    auth_context.gate_resolver               = gate_resolver   # v4.0 — referencia, sin wire()
 
     # ═══════════════════════════════════════════════════════
     # MIDDLEWARE
@@ -141,6 +156,8 @@ def wire_auth(app, conductor) -> None:
         db_instance        = db,
         conductor          = conductor,
         http_gate          = http_gate,
+        db_gate            = db_gate,
+        gate_resolver      = gate_resolver,  # v4.0
     )
 
     register_http_gate(app)
@@ -162,4 +179,4 @@ def wire_auth(app, conductor) -> None:
         "gates":   ["HttpGate", "DbGate", "ModuleGate"] + [n for n, _ in _FEATURE_GATES],
     })
 
-    app.logger.info("  [✓] Auth wired")
+    app.logger.info("  [✓] Auth wired (v4.0)")

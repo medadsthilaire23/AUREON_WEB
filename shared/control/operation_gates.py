@@ -1,83 +1,230 @@
 # shared/control/operation_gates.py
 # ══════════════════════════════════════════════════════════════════════════════
-# Mapa estático de operaciones — AUREON Sistema de Control v3.1
+# Loader dinámico de operaciones — AUREON v4.0
 #
-# Cambios v3.1:
-#   - OP020-OP029 → Lifebound
-#   - OP099       → Dashboard (panel de control interno)
-#
-# Reglas de los IDs:
-#     OP001            ← raíz (0 guiones) — operación completa
-#     OP001_001        ← proceso de primer nivel (1 guión)
-#     OP001_001_001    ← subproceso (2 guiones)
-#
-# Regla de existencia:
-#     Un nodo existe solo si él mismo y su padre están OPEN.
-#     padre(OP001_002_001) = OP001_002
-#     padre(OP001_002)     = OP001
-#     padre(OP001)         = None (es raíz)
-#
-# Regla de propagación:
-#     El fallo se propaga siempre hacia abajo, nunca hacia arriba.
-#     OP001_002 CLOSED → sus hijos no existen.
-#     OP001 sigue OPEN. OP002, OP003... no se enteran.
-#
-# Regla de escalabilidad:
-#     Cada producto nuevo añade su rango de OPs aquí.
-#     El sistema de control no cambia — solo crece este archivo.
-#
-# Rangos por módulo:
-#     OP001 - OP009   → auth
-#     OP010           → system (boot)
-#     OP020 - OP029   → lifebound
-#     OP030+          → productos futuros
-#     OP099           → dashboard (herramientas internas)
-#
-# Regla arquitectónica:
-#     Este módulo NO importa nada de products/.
-#     Es solo datos — sin lógica, sin imports externos.
+# Fix v4.0.1:
+#   - resolve_op_id() ahora distingue rutas de frontend (modulo="frontend")
+#     de rutas de API. Las rutas XX de frontend se loguean como DEBUG,
+#     no como WARNING — evita falsos positivos en el dashboard.
+#   - _FRONTEND_PREFIXES: rutas que nunca son XX aunque no estén en la tabla.
+#     Se asignan a OP030 (frontend_home) para que el tracer las cierre OK.
+#   - Las rutas de API (/auth/, /lifebound/api/) siguen generando WARNING XX
+#     si no están registradas — eso es comportamiento correcto.
 # ══════════════════════════════════════════════════════════════════════════════
 
+from __future__ import annotations
 
-# ── Helpers de jerarquía ───────────────────────────────────────────────────
+import json
+import logging
+import os
+from typing import Optional
 
-def get_parent(op_id: str) -> str | None:
+log = logging.getLogger("aureon.control.operation_gates")
+
+_BASE_DIR  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_JSON_PATH = os.path.join(_BASE_DIR, "management", "data", "tabla_operacion.json")
+
+XX_OP_ID    = "XX"
+XX_OPERATION = {
+    "name":       "discovery",
+    "gates":      ["HttpGate"],
+    "module":     "discovery",
+    "nivel":      0,
+    "padre":      None,
+    "log_policy": "AUDIT",
+    "alerta":     "ROJA_CRITICA",
+}
+
+# Rutas que NUNCA son XX — son frontend legítimo sin registro en tabla.
+# Se tratan como OP030 (frontend genérico) para que el tracer las cierre OK.
+_FRONTEND_FALLBACK_OP = "OP030"
+_FRONTEND_PREFIXES = (
+    "/static/",
+    "/favicon",
+    "/health",
+    "/lifebound/static/",
+    "/auth/static/",
+)
+
+# Rutas de API — si no están en la tabla SÍ son XX (alerta real)
+_API_PREFIXES = ("/auth/", "/lifebound/api/", "/api/")
+
+OPERATIONS: dict[str, dict] = {}
+_URL_MAP:   list[tuple[str, str, str]] = []
+_loaded     = False
+
+
+def _load() -> None:
+    global OPERATIONS, _URL_MAP, _loaded
+
+    if not os.path.exists(_JSON_PATH):
+        log.warning("[OperationGates] tabla_operacion.json no encontrado en %s — modo emergencia", _JSON_PATH)
+        _load_emergency_fallback()
+        return
+
+    try:
+        with open(_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        url_map = []
+        for op_id, op in data.get("operaciones", {}).items():
+            OPERATIONS[op_id] = {
+                "name":       op.get("nombre", op_id),
+                "gates":      op.get("gates", ["HttpGate"]),
+                "module":     op.get("modulo", "auth"),
+                "nivel":      op.get("nivel", 1),
+                "padre":      op.get("padre"),
+                "log_policy": op.get("log_policy", "SUMMARY"),
+            }
+            for ruta in op.get("rutas", []):
+                method = ruta.get("method", "").upper()
+                path   = ruta.get("path", "")
+                if method and path:
+                    url_map.append((method, path, op_id))
+
+        # Rutas más específicas primero
+        _URL_MAP = sorted(url_map, key=lambda x: len(x[1]), reverse=True)
+        _loaded  = True
+        log.info(
+            "[OperationGates] %d operaciones, %d rutas — %s",
+            len(OPERATIONS), len(_URL_MAP), _JSON_PATH,
+        )
+
+    except Exception as e:
+        log.error("[OperationGates] Error cargando JSON: %s", e)
+        _load_emergency_fallback()
+
+
+def _load_emergency_fallback() -> None:
+    global OPERATIONS, _URL_MAP, _loaded
+    OPERATIONS = {
+        "OP010":     {"name":"system_boot","gates":["BootGate"],"module":"system","nivel":1,"padre":None,"log_policy":"AUDIT"},
+        "OP010_001": {"name":"boot_phase1_db","gates":["BootGate"],"module":"system","nivel":2,"padre":"OP010","log_policy":"AUDIT"},
+        "OP010_002": {"name":"boot_phase1_blueprints","gates":["BootGate"],"module":"system","nivel":2,"padre":"OP010","log_policy":"AUDIT"},
+        "OP010_003": {"name":"boot_phase2_oauth","gates":["BootGate"],"module":"system","nivel":2,"padre":"OP010","log_policy":"AUDIT"},
+        "OP010_004": {"name":"boot_phase2_conductor","gates":["BootGate"],"module":"system","nivel":2,"padre":"OP010","log_policy":"AUDIT"},
+        "OP010_005": {"name":"boot_phase2_tracer","gates":["BootGate"],"module":"system","nivel":2,"padre":"OP010","log_policy":"AUDIT"},
+        "OP030":     {"name":"frontend_home","gates":["HttpGate"],"module":"frontend","nivel":1,"padre":None,"log_policy":"SUMMARY"},
+        "OP099_001": {"name":"dashboard_status","gates":["HttpGate"],"module":"dashboard","nivel":2,"padre":"OP099","log_policy":"AUDIT"},
+    }
+    _URL_MAP = [
+        ("GET", "/auth/control/status", "OP099_001"),
+        ("GET", "/", "OP030"),
+    ]
+    _loaded  = True
+    log.warning("[OperationGates] Modo emergencia — solo operaciones críticas")
+
+
+def resolve_op_id(method: str, path: str) -> str:
     """
-    Devuelve el ID del padre de una operación.
-    El padre es el nodo anterior — el ID sin el último _XXX.
+    Resuelve op_id desde método + path.
 
-    Ejemplos:
-        get_parent("OP001_002_001") → "OP001_002"
-        get_parent("OP001_002")     → "OP001"
-        get_parent("OP001")         → None  (es raíz)
+    Prioridad:
+      1. Match exacto en _URL_MAP (más específico primero)
+      2. Rutas de assets/health → _FRONTEND_FALLBACK_OP (sin alerta)
+      3. Rutas de API no registradas → XX (alerta ROJA_CRITICA)
+      4. Rutas desconocidas que no son API → _FRONTEND_FALLBACK_OP (debug)
     """
+    # 1. Buscar en la tabla
+    for m, prefix, op_id in _URL_MAP:
+        if m == method and path.startswith(prefix):
+            return op_id
+
+    # 2. Assets y health — nunca XX
+    if any(path.startswith(p) for p in _FRONTEND_PREFIXES):
+        return _FRONTEND_FALLBACK_OP
+
+    # 3. Rutas de API no registradas → XX real
+    if any(path.startswith(p) for p in _API_PREFIXES):
+        log.warning(
+            "[OperationGates] XX DISCOVERY (API) — %s %s",
+            method, path,
+        )
+        return XX_OP_ID
+
+    # 4. Resto (páginas frontend no registradas) → fallback silencioso
+    log.debug(
+        "[OperationGates] frontend sin registro — %s %s → %s",
+        method, path, _FRONTEND_FALLBACK_OP,
+    )
+    return _FRONTEND_FALLBACK_OP
+
+
+def resolve_module(op_id: str) -> str:
+    if op_id == XX_OP_ID:
+        return "discovery"
+    return OPERATIONS.get(op_id, {}).get("module", "auth")
+
+
+def resolve_log_policy(op_id: str) -> str:
+    if op_id == XX_OP_ID:
+        return "AUDIT"
+    return OPERATIONS.get(op_id, {}).get("log_policy", "SUMMARY")
+
+
+def validate_boot() -> dict:
+    KNOWN_GATES = {"HttpGate", "DbGate", "ModuleGate", "BootGate"}
+    warnings    = []
+    for op_id, op in OPERATIONS.items():
+        for gate in op.get("gates", []):
+            if gate not in KNOWN_GATES:
+                warnings.append(f"{op_id}: gate '{gate}' no reconocido")
+    result = {"ok": len(warnings) == 0, "total": len(OPERATIONS), "warnings": warnings}
+    if warnings:
+        for w in warnings:
+            log.warning("  [OperationGates] ⚠ %s", w)
+    else:
+        log.info("[OperationGates] validate_boot OK — %d operaciones válidas", len(OPERATIONS))
+    return result
+
+
+# ── API pública ────────────────────────────────────────────────────────────────
+
+def get_operation(op_id: str) -> Optional[dict]:
+    if op_id == XX_OP_ID:
+        return XX_OPERATION
+    return OPERATIONS.get(op_id)
+
+
+def get_gates_for(op_id: str) -> list[str]:
+    if op_id == XX_OP_ID:
+        return XX_OPERATION["gates"]
+    return OPERATIONS.get(op_id, {}).get("gates", [])
+
+
+def needs_gate(op_id: str, gate_name: str) -> bool:
+    return gate_name in get_gates_for(op_id)
+
+
+def exists(op_id: str) -> bool:
+    return op_id in OPERATIONS and op_id != XX_OP_ID
+
+
+def get_operations_by_gate(gate_name: str) -> list[str]:
+    return [oid for oid, op in OPERATIONS.items() if gate_name in op.get("gates", [])]
+
+
+def get_operations_by_module(module: str) -> list[str]:
+    return [oid for oid, op in OPERATIONS.items() if op.get("module") == module]
+
+
+def get_parent(op_id: str) -> Optional[str]:
+    if op_id == XX_OP_ID:
+        return None
+    op = OPERATIONS.get(op_id, {})
+    if "padre" in op:
+        return op["padre"]
     if "_" not in op_id:
         return None
     return op_id.rsplit("_", 1)[0]
 
 
 def get_depth(op_id: str) -> int:
-    """
-    Devuelve la profundidad del nodo en el árbol.
-    La raíz tiene profundidad 0.
-
-    Ejemplos:
-        get_depth("OP001")         → 0
-        get_depth("OP001_001")     → 1
-        get_depth("OP001_001_001") → 2
-    """
-    return op_id.count("_")
+    return 0 if op_id == XX_OP_ID else op_id.count("_")
 
 
 def get_ancestors(op_id: str) -> list[str]:
-    """
-    Devuelve todos los ancestros de un nodo, del más cercano al más lejano.
-
-    Ejemplo:
-        get_ancestors("OP001_002_001") → ["OP001_002", "OP001"]
-    """
-    ancestors = []
-    current   = op_id
+    ancestors, current = [], op_id
     while True:
         parent = get_parent(current)
         if parent is None:
@@ -88,518 +235,7 @@ def get_ancestors(op_id: str) -> list[str]:
 
 
 def is_descendant_of(op_id: str, ancestor_id: str) -> bool:
-    """
-    Retorna True si op_id es descendiente de ancestor_id.
-
-    Ejemplo:
-        is_descendant_of("OP001_002_001", "OP001_002") → True
-        is_descendant_of("OP001_002_001", "OP001")     → True
-        is_descendant_of("OP001_002_001", "OP002")     → False
-    """
     return op_id.startswith(ancestor_id + "_")
 
 
-# ── Mapa de operaciones ────────────────────────────────────────────────────
-
-OPERATIONS: dict[str, dict] = {
-
-    # ══════════════════════════════════════════════════════
-    # AUTH — OP001 a OP009
-    # ══════════════════════════════════════════════════════
-
-    # ── OP001 — LOGIN (email + password) ──────────────────
-    "OP001": {
-        "name":   "login",
-        "gates":  ["HttpGate", "DbGate"],
-        "module": "auth",
-    },
-    "OP001_001": {
-        "name":   "login_http_validate",
-        "gates":  ["HttpGate"],
-        "module": "auth",
-    },
-    "OP001_002": {
-        "name":   "login_db_user_lookup",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP001_003": {
-        "name":   "login_db_session_create",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP001_004": {
-        "name":   "login_email_new_device",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-
-    # ── OP002 — REGISTER ──────────────────────────────────
-    "OP002": {
-        "name":   "register",
-        "gates":  ["HttpGate", "DbGate"],
-        "module": "auth",
-    },
-    "OP002_001": {
-        "name":   "register_http_validate",
-        "gates":  ["HttpGate"],
-        "module": "auth",
-    },
-    "OP002_002": {
-        "name":   "register_db_user_create",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP002_003": {
-        "name":   "register_db_identity_create",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP002_004": {
-        "name":   "register_db_session_create",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP002_005": {
-        "name":   "register_email_verification",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-
-    # ── OP003 — OAUTH GOOGLE ──────────────────────────────
-    "OP003": {
-        "name":   "oauth_google",
-        "gates":  ["HttpGate", "DbGate", "ModuleGate"],
-        "module": "auth",
-    },
-    "OP003_001": {
-        "name":   "oauth_google_redirect",
-        "gates":  ["HttpGate"],
-        "module": "auth",
-    },
-    "OP003_002": {
-        "name":   "oauth_google_token_exchange",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP003_002_001": {
-        "name":   "oauth_google_token_fetch",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP003_002_002": {
-        "name":   "oauth_google_userinfo",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP003_003": {
-        "name":   "oauth_google_db_user",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP003_003_001": {
-        "name":   "oauth_google_db_user_lookup",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP003_003_002": {
-        "name":   "oauth_google_db_identity_link",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP003_004": {
-        "name":   "oauth_google_session_create",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-
-    # ── OP004 — OAUTH GITHUB ──────────────────────────────
-    "OP004": {
-        "name":   "oauth_github",
-        "gates":  ["HttpGate", "DbGate", "ModuleGate"],
-        "module": "auth",
-    },
-    "OP004_001": {
-        "name":   "oauth_github_redirect",
-        "gates":  ["HttpGate"],
-        "module": "auth",
-    },
-    "OP004_002": {
-        "name":   "oauth_github_token_exchange",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP004_002_001": {
-        "name":   "oauth_github_token_fetch",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP004_002_002": {
-        "name":   "oauth_github_profile_fetch",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP004_002_003": {
-        "name":   "oauth_github_email_fetch",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP004_003": {
-        "name":   "oauth_github_db_user",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP004_004": {
-        "name":   "oauth_github_session_create",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-
-    # ── OP005 — PASSKEY REGISTER ──────────────────────────
-    "OP005": {
-        "name":   "passkey_register",
-        "gates":  ["HttpGate", "DbGate", "ModuleGate"],
-        "module": "auth",
-    },
-    "OP005_001": {
-        "name":   "passkey_register_begin",
-        "gates":  ["HttpGate", "DbGate"],
-        "module": "auth",
-    },
-    "OP005_001_001": {
-        "name":   "passkey_register_user_lookup",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP005_001_002": {
-        "name":   "passkey_register_options_generate",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP005_002": {
-        "name":   "passkey_register_complete",
-        "gates":  ["HttpGate", "DbGate", "ModuleGate"],
-        "module": "auth",
-    },
-    "OP005_002_001": {
-        "name":   "passkey_register_verify",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP005_002_002": {
-        "name":   "passkey_register_db_save",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-
-    # ── OP006 — PASSKEY LOGIN ─────────────────────────────
-    "OP006": {
-        "name":   "passkey_login",
-        "gates":  ["HttpGate", "DbGate", "ModuleGate"],
-        "module": "auth",
-    },
-    "OP006_001": {
-        "name":   "passkey_login_begin",
-        "gates":  ["HttpGate"],
-        "module": "auth",
-    },
-    "OP006_002": {
-        "name":   "passkey_login_complete",
-        "gates":  ["HttpGate", "DbGate", "ModuleGate"],
-        "module": "auth",
-    },
-    "OP006_002_001": {
-        "name":   "passkey_login_credential_lookup",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP006_002_002": {
-        "name":   "passkey_login_verify",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP006_002_003": {
-        "name":   "passkey_login_session_create",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-
-    # ── OP007 — EMAIL TRANSACCIONAL ───────────────────────
-    "OP007": {
-        "name":   "email_send",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP007_001": {
-        "name":   "email_verification",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP007_002": {
-        "name":   "email_new_device_alert",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP007_003": {
-        "name":   "email_reset_password",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-    "OP007_004": {
-        "name":   "email_sessions_revoked",
-        "gates":  ["ModuleGate"],
-        "module": "auth",
-    },
-
-    # ── OP008 — SESSION MANAGEMENT ────────────────────────
-    "OP008": {
-        "name":   "session_management",
-        "gates":  ["HttpGate", "DbGate"],
-        "module": "auth",
-    },
-    "OP008_001": {
-        "name":   "session_logout",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP008_002": {
-        "name":   "session_refresh",
-        "gates":  ["HttpGate", "DbGate"],
-        "module": "auth",
-    },
-    "OP008_003": {
-        "name":   "session_revoke_single",
-        "gates":  ["DbGate"],
-        "module": "auth",
-    },
-    "OP008_004": {
-        "name":   "session_revoke_all",
-        "gates":  ["DbGate", "ModuleGate"],
-        "module": "auth",
-    },
-
-    # ── OP009 — DATABASE ──────────────────────────────────
-    "OP009": {
-        "name":   "db_init",
-        "gates":  ["BootGate", "DbGate"],
-        "module": "system",
-    },
-    "OP009_001": {
-        "name":   "db_connection",
-        "gates":  ["DbGate"],
-        "module": "system",
-    },
-    "OP009_002": {
-        "name":   "db_migrations",
-        "gates":  ["DbGate"],
-        "module": "system",
-    },
-    "OP009_003": {
-        "name":   "db_tables_verify",
-        "gates":  ["DbGate"],
-        "module": "system",
-    },
-
-    # ══════════════════════════════════════════════════════
-    # SYSTEM — OP010
-    # ══════════════════════════════════════════════════════
-
-    # ── OP010 — BOOT ──────────────────────────────────────
-    "OP010": {
-        "name":   "system_boot",
-        "gates":  ["BootGate"],
-        "module": "system",
-    },
-    "OP010_001": {
-        "name":   "boot_phase1_db",
-        "gates":  ["BootGate"],
-        "module": "system",
-    },
-    "OP010_002": {
-        "name":   "boot_phase1_blueprints",
-        "gates":  ["BootGate"],
-        "module": "system",
-    },
-    "OP010_003": {
-        "name":   "boot_phase2_oauth",
-        "gates":  ["BootGate"],
-        "module": "system",
-    },
-    "OP010_004": {
-        "name":   "boot_phase2_conductor",
-        "gates":  ["BootGate"],
-        "module": "system",
-    },
-    "OP010_005": {
-        "name":   "boot_phase2_tracer",
-        "gates":  ["BootGate"],
-        "module": "system",
-    },
-
-    # ══════════════════════════════════════════════════════
-    # LIFEBOUND — OP020 a OP029
-    # ══════════════════════════════════════════════════════
-
-    "OP020": {
-        "name":   "lifebound_session_start",
-        "gates":  ["HttpGate"],
-        "module": "lifebound",
-    },
-    "OP021": {
-        "name":   "lifebound_photos_receive",
-        "gates":  ["HttpGate"],
-        "module": "lifebound",
-    },
-    "OP022": {
-        "name":   "lifebound_pattern_select",
-        "gates":  ["HttpGate"],
-        "module": "lifebound",
-    },
-    "OP023": {
-        "name":   "lifebound_slots_resolve",
-        "gates":  ["HttpGate"],
-        "module": "lifebound",
-    },
-    "OP024": {
-        "name":   "lifebound_transform",
-        "gates":  ["HttpGate"],
-        "module": "lifebound",
-    },
-    "OP025": {
-        "name":   "lifebound_generate",
-        "gates":  ["HttpGate", "ModuleGate"],
-        "module": "lifebound",
-    },
-    "OP025_001": {
-        "name":   "lifebound_generate_intro_pages",
-        "gates":  ["ModuleGate"],
-        "module": "lifebound",
-    },
-    "OP025_002": {
-        "name":   "lifebound_generate_evidence",
-        "gates":  ["ModuleGate"],
-        "module": "lifebound",
-    },
-    "OP025_003": {
-        "name":   "lifebound_generate_pdf_merge",
-        "gates":  ["ModuleGate"],
-        "module": "lifebound",
-    },
-    "OP026": {
-        "name":   "lifebound_session_status",
-        "gates":  ["HttpGate"],
-        "module": "lifebound",
-    },
-    "OP027": {
-        "name":   "lifebound_session_clear",
-        "gates":  ["HttpGate"],
-        "module": "lifebound",
-    },
-    "OP028": {
-        "name":   "lifebound_templates_list",
-        "gates":  ["HttpGate"],
-        "module": "lifebound",
-    },
-    "OP029": {
-        "name":   "lifebound_preview",
-        "gates":  ["HttpGate", "ModuleGate"],
-        "module": "lifebound",
-    },
-
-    # ══════════════════════════════════════════════════════
-    # DASHBOARD — OP099
-    # Panel de control interno — sus eventos aparecen
-    # en un panel separado y NO se suman al sistema.
-    # ══════════════════════════════════════════════════════
-
-    "OP099": {
-        "name":   "dashboard_poll",
-        "gates":  ["HttpGate"],
-        "module": "dashboard",
-    },
-    "OP099_001": {
-        "name":   "dashboard_status",
-        "gates":  ["HttpGate"],
-        "module": "dashboard",
-    },
-    "OP099_002": {
-        "name":   "dashboard_sessions",
-        "gates":  ["HttpGate"],
-        "module": "dashboard",
-    },
-    "OP099_003": {
-        "name":   "dashboard_users",
-        "gates":  ["HttpGate"],
-        "module": "dashboard",
-    },
-    "OP099_004": {
-        "name":   "dashboard_activity",
-        "gates":  ["HttpGate"],
-        "module": "dashboard",
-    },
-    "OP099_005": {
-        "name":   "dashboard_export",
-        "gates":  ["HttpGate"],
-        "module": "dashboard",
-    },
-
-}
-
-
-# ── API de consulta ────────────────────────────────────────────────────────
-
-def get_operation(op_id: str) -> dict | None:
-    """
-    Devuelve la definición de una operación por su ID.
-    Retorna None si el ID no existe.
-    """
-    return OPERATIONS.get(op_id)
-
-
-def get_gates_for(op_id: str) -> list[str]:
-    """
-    Devuelve los gates que necesita una operación.
-    Si el ID no existe, retorna lista vacía.
-    """
-    op = OPERATIONS.get(op_id)
-    return op["gates"] if op else []
-
-
-def needs_gate(op_id: str, gate_name: str) -> bool:
-    """
-    Retorna True si la operación necesita ese gate.
-
-    Ejemplo:
-        needs_gate("OP001_002", "DbGate")   → True
-        needs_gate("OP001_002", "HttpGate") → False
-    """
-    return gate_name in get_gates_for(op_id)
-
-
-def get_operations_by_gate(gate_name: str) -> list[str]:
-    """
-    Devuelve todos los IDs de operación que usan ese gate.
-    Útil para el Conductor cuando un gate cambia a CLOSED —
-    sabe exactamente qué operaciones no pueden ejecutarse.
-    """
-    return [
-        op_id
-        for op_id, op in OPERATIONS.items()
-        if gate_name in op["gates"]
-    ]
-
-
-def get_operations_by_module(module: str) -> list[str]:
-    """
-    Devuelve todos los IDs de operación de un módulo.
-    """
-    return [
-        op_id
-        for op_id, op in OPERATIONS.items()
-        if op["module"] == module
-    ]
-
-
-def exists(op_id: str) -> bool:
-    """Retorna True si el ID de operación está definido en el sistema."""
-    return op_id in OPERATIONS
+_load()

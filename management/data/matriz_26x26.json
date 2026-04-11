@@ -1,0 +1,2731 @@
+{
+  "_meta": {
+    "version": "4.0",
+    "description": "Inventario de 676 combinaciones de prefijos AA-ZZ",
+    "total": 676,
+    "reservados": [
+      "AD",
+      "FA",
+      "FL",
+      "GB",
+      "OP",
+      "SA",
+      "TM",
+      "UR",
+      "XX"
+    ],
+    "estados": {
+      "LIBRE": "Disponible para nuevas operaciones",
+      "RESERVADO": "En uso por el sistema — no disponible",
+      "ESPECIAL": "Prefijo de anomalía o sistema con significado fijo"
+    },
+    "libre": 667,
+    "reservado": 9
+  },
+  "combinaciones": {
+    "AA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AD": {
+      "estado": "ESPECIAL",
+      "descripcion": "Anomalía Admin — acciones no autorizadas"
+    },
+    "AE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "AZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "BZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "CZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "DZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ED": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ER": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ES": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ET": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "EZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FA": {
+      "estado": "ESPECIAL",
+      "descripcion": "Anomalía Fallo Técnico — Python exception"
+    },
+    "FB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FL": {
+      "estado": "ESPECIAL",
+      "descripcion": "Anomalía Falso Loc — IP/GPS manipulado"
+    },
+    "FM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "FZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GB": {
+      "estado": "ESPECIAL",
+      "descripcion": "Anomalía Gate Bloqueado — saltarse puerta obligatoria"
+    },
+    "GC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "GZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "HZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ID": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "II": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "IZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "JZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "KZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "LZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ME": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ML": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "MZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ND": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "NZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ON": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OP": {
+      "estado": "RESERVADO",
+      "descripcion": "Operation Success — prefijo estándar de operaciones de negocio"
+    },
+    "OQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "OZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "PZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "QZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "RZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SA": {
+      "estado": "ESPECIAL",
+      "descripcion": "Anomalía Saturación — DDoS o rate limit"
+    },
+    "SB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ST": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "SZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TM": {
+      "estado": "ESPECIAL",
+      "descripcion": "Anomalía Timeout — latencia crítica"
+    },
+    "TN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "TZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UR": {
+      "estado": "ESPECIAL",
+      "descripcion": "Anomalía Usuario — errores de input o permisos"
+    },
+    "US": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "UZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "VZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "WZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XX": {
+      "estado": "ESPECIAL",
+      "descripcion": "Discovery — operación no registrada (ROJA_CRITICA)"
+    },
+    "XY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "XZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "YZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZA": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZB": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZC": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZD": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZE": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZF": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZG": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZH": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZI": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZJ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZK": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZL": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZM": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZN": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZO": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZP": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZQ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZR": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZS": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZT": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZU": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZV": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZW": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZX": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZY": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    },
+    "ZZ": {
+      "estado": "LIBRE",
+      "descripcion": "Disponible"
+    }
+  }
+}
